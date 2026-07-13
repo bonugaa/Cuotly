@@ -104,6 +104,12 @@ const app = {
     ready: false,
     mode: 'login',
   },
+  persistence: {
+    loading: false,
+    saveTimer: null,
+    cloudAvailable: true,
+    lastCloudError: '',
+  },
 };
 
 function uid(prefix) {
@@ -225,6 +231,15 @@ function getAuthEmail(user) {
   return user?.email || '';
 }
 
+function authErrorMessage(error, fallback) {
+  const message = String(error?.message || '').toLowerCase();
+  if (message.includes('email not confirmed')) return 'La cuenta existe, pero falta confirmar el email antes de iniciar sesion.';
+  if (message.includes('invalid login credentials')) return 'Email o contrasena incorrectos. Si creaste la cuenta con Google, entra con Google.';
+  if (message.includes('user already registered')) return 'Ese email ya tiene cuenta. Inicia sesion o usa Google.';
+  if (message.includes('signup disabled')) return 'El registro por email esta desactivado en Supabase.';
+  return fallback;
+}
+
 function applyAuthUserToState() {
   if (!app.state || !app.auth.user) return;
   const owner = app.state.members.find(member => member.role === 'owner') || app.state.members[0];
@@ -304,7 +319,7 @@ async function handleAuthLogin(form) {
     password: data.password,
   });
   if (error) {
-    renderAuthScreen('login', 'Revisa el email o la contrasena e intentalo de nuevo.');
+    renderAuthScreen('login', authErrorMessage(error, 'Revisa el email o la contrasena e intentalo de nuevo.'));
     return;
   }
   showToast('Sesion iniciada');
@@ -323,11 +338,11 @@ async function handleAuthRegister(form) {
     options: { data: { name: data.name.trim(), full_name: data.name.trim() } },
   });
   if (error) {
-    renderAuthScreen('register', 'No se ha podido crear la cuenta. Revisa los datos.');
+    renderAuthScreen('register', authErrorMessage(error, 'No se ha podido crear la cuenta. Revisa los datos.'));
     return;
   }
   if (!result.session) {
-    renderAuthScreen('login', 'Cuenta creada. Revisa tu email si Supabase te pide confirmarla.');
+    renderAuthScreen('login', 'Cuenta creada. Revisa tu email y confirma la cuenta antes de iniciar sesion.');
     return;
   }
   showToast('Cuenta creada');
@@ -643,12 +658,82 @@ function seedState() {
   };
 }
 
-function loadState() {
+function normalizeState(state) {
+  const seeded = seedState();
+  state.version = 3;
+  state.settings ||= seeded.settings;
+  state.members ||= [];
+  state.restaurants ||= [];
+  state.services ||= [];
+  state.tasks ||= [];
+  state.payments ||= [];
+  state.reports ||= [];
+  state.reminders ||= [];
+  return state;
+}
+
+async function loadCloudState() {
+  if (!app.auth.client || !app.auth.user) return null;
+  const { data, error } = await app.auth.client
+    .from('cuotly_user_states')
+    .select('state')
+    .eq('user_id', app.auth.user.id)
+    .maybeSingle();
+  if (error) {
+    app.persistence.cloudAvailable = false;
+    app.persistence.lastCloudError = error.message || 'No se pudo cargar la nube';
+    return null;
+  }
+  app.persistence.cloudAvailable = true;
+  app.persistence.lastCloudError = '';
+  return data?.state || null;
+}
+
+async function saveCloudStateNow() {
+  if (!app.auth.client || !app.auth.user || !app.state || app.persistence.loading) return;
+  const payload = JSON.parse(JSON.stringify(app.state));
+  const { error } = await app.auth.client
+    .from('cuotly_user_states')
+    .upsert({
+      user_id: app.auth.user.id,
+      state: payload,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'user_id' });
+  if (error) {
+    app.persistence.cloudAvailable = false;
+    app.persistence.lastCloudError = error.message || 'No se pudo guardar en la nube';
+    console.warn('Cuotly cloud save failed', error);
+    return;
+  }
+  app.persistence.cloudAvailable = true;
+  app.persistence.lastCloudError = '';
+}
+
+function scheduleCloudSave() {
+  if (!app.auth.client || !app.auth.user || app.persistence.loading) return;
+  clearTimeout(app.persistence.saveTimer);
+  app.persistence.saveTimer = setTimeout(() => {
+    saveCloudStateNow();
+  }, 650);
+}
+
+async function loadState() {
+  app.persistence.loading = true;
+  const cloudState = await loadCloudState();
+  if (cloudState) {
+    app.state = normalizeState(cloudState);
+    applyAuthUserToState();
+    refreshBilling();
+    app.persistence.loading = false;
+    saveState();
+    return;
+  }
   const stored = localStorage.getItem(storageKey());
   if (!stored) {
     app.state = seedState();
     applyAuthUserToState();
     refreshBilling();
+    app.persistence.loading = false;
     saveState();
     return;
   }
@@ -658,24 +743,20 @@ function loadState() {
       app.state = seedState();
       applyAuthUserToState();
       refreshBilling();
+      app.persistence.loading = false;
       saveState();
       return;
     }
-    app.state.settings ||= seedState().settings;
-    app.state.members ||= [];
-    app.state.restaurants ||= [];
-    app.state.services ||= [];
-    app.state.tasks ||= [];
-    app.state.payments ||= [];
-    app.state.reports ||= [];
-    app.state.reminders ||= [];
+    app.state = normalizeState(app.state);
     applyAuthUserToState();
     refreshBilling();
+    app.persistence.loading = false;
     saveState();
   } catch {
     app.state = seedState();
     applyAuthUserToState();
     refreshBilling();
+    app.persistence.loading = false;
     saveState();
   }
 }
@@ -683,6 +764,7 @@ function loadState() {
 function saveState() {
   if (!app.state) return;
   localStorage.setItem(storageKey(), JSON.stringify(app.state));
+  scheduleCloudSave();
 }
 
 function showToast(message) {
@@ -1876,10 +1958,13 @@ function handleSettingsSubmit(form) {
   render();
 }
 
-function resetDemo() {
+async function resetDemo() {
   if (!confirm('Reiniciar los datos de Cuotly?')) return;
   localStorage.removeItem(storageKey());
-  loadState();
+  if (app.auth.client && app.auth.user) {
+    await app.auth.client.from('cuotly_user_states').delete().eq('user_id', app.auth.user.id);
+  }
+  await loadState();
   showToast('Datos reiniciados');
   showView('inicio');
 }
@@ -1982,13 +2067,16 @@ function registerServiceWorker() {
   }
 }
 
-function startApp() {
-  loadState();
+async function startApp() {
+  await loadState();
   app.selectedRestaurantId = visibleRestaurants()[0]?.id || null;
   showAppShell();
   registerServiceWorker();
   render();
   app.booted = true;
+  if (app.auth.client && !app.persistence.cloudAvailable) {
+    showToast('Falta ejecutar la actualizacion de Supabase para sincronizar dispositivos');
+  }
 }
 
 async function init() {
@@ -2014,7 +2102,7 @@ async function init() {
     showView(item.dataset.view);
   }));
   const canStart = await setupAuth();
-  if (canStart) startApp();
+  if (canStart) await startApp();
 }
 
 init();

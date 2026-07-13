@@ -49,6 +49,12 @@ Si vas a usar las mismas cuentas que Fiometra, puedes usar el mismo proyecto de 
 
 Cuando salga `Success`, la base de datos ya esta preparada.
 
+Si la app ya estaba publicada y solo necesitas activar la sincronizacion entre movil y ordenador, no hace falta pegar todo `schema.sql`. Pega solo:
+
+`supabase/upgrade-cloud-sync.sql`
+
+Ese archivo crea el guardado compartido por cuenta.
+
 ## Paso 3: Vercel
 
 1. Entra en Vercel.
@@ -86,4 +92,3 @@ Para actualizar la app en el futuro:
 1. Sube a GitHub los archivos que cambien.
 2. Pulsa `Commit changes`.
 3. Vercel se actualiza solo.
-
