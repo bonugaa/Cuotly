@@ -1,5 +1,5 @@
 window.CUOTLY_CONFIG = {
   mode: 'local',
-  supabaseUrl: '',
+  supabaseUrl: 'https://fgghesxikhbhasyyuwpf.supabase.co',
   supabaseAnonKey: '',
 };
