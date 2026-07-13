@@ -1,0 +1,17 @@
+{
+  "name": "Cuotly",
+  "short_name": "Cuotly",
+  "description": "Gestion de mantenimiento web para restaurantes.",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#f4f7f5",
+  "theme_color": "#153f3a",
+  "icons": [
+    {
+      "src": "app-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

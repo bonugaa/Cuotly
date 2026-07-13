@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#153f3a">
+  <title>Cuotly | Mantenimiento de restaurantes</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="authScreen" class="auth-screen hidden" aria-live="polite"></div>
+
+  <div class="app-shell" id="appShell">
+    <aside class="sidebar" id="sidebar" aria-label="Navegacion principal">
+      <div class="brand">
+        <span class="brand-mark">Q</span>
+        <div><strong>Cuotly</strong><small>Gestion de mantenimiento</small></div>
+        <button class="icon-button close-drawer" id="closeDrawer" aria-label="Cerrar menu">x</button>
+      </div>
+
+      <nav class="main-nav">
+        <button class="nav-item active" data-view="inicio"><span class="nav-icon">⌂</span><span>Inicio</span></button>
+        <button class="nav-item" data-view="restaurantes"><span class="nav-icon">▦</span><span>Restaurantes</span><b id="navRestaurants">0</b></button>
+        <button class="nav-item" data-view="trabajos"><span class="nav-icon">✓</span><span>Trabajos</span><b class="warning-badge" id="navTasks">0</b></button>
+        <button class="nav-item" data-view="calendario"><span class="nav-icon">□</span><span>Calendario</span></button>
+        <button class="nav-item" data-view="pagos"><span class="nav-icon">€</span><span>Pagos</span><b class="danger-badge" id="navPayments">0</b></button>
+        <button class="nav-item" data-view="informes"><span class="nav-icon">▤</span><span>Informes</span></button>
+        <button class="nav-item" data-view="equipo"><span class="nav-icon">♙</span><span>Equipo</span></button>
+        <button class="nav-item" data-view="planes"><span class="nav-icon">◇</span><span>Planes y servicios</span></button>
+      </nav>
+
+      <div class="sidebar-bottom">
+        <button class="nav-item" data-view="ajustes"><span class="nav-icon">⚙</span><span>Ajustes</span></button>
+        <div class="profile-mini">
+          <span class="avatar avatar-green" id="profileAvatar">BN</span>
+          <div><strong id="profileName">Bosco Nunez</strong><small id="profileRole">Propietario</small></div>
+          <button class="icon-button" data-action="logout" aria-label="Cerrar sesion">↳</button>
+        </div>
+      </div>
+    </aside>
+
+    <div class="drawer-backdrop" id="drawerBackdrop"></div>
+
+    <main class="main-content">
+      <header class="topbar">
+        <button class="icon-button menu-button" id="openDrawer" aria-label="Abrir menu">☰</button>
+        <div class="global-search"><span>⌕</span><input id="globalSearch" placeholder="Buscar restaurante, trabajo o miembro..."><kbd>Ctrl K</kbd></div>
+        <div class="top-actions">
+          <button class="icon-button notification-button" aria-label="Notificaciones" data-action="show-alerts"><span>♢</span><i id="alertCount">0</i></button>
+          <span class="top-avatar" id="topAvatar">BN</span>
+        </div>
+      </header>
+
+      <section class="view active" id="view-inicio"></section>
+      <section class="view" id="view-restaurantes"></section>
+      <section class="view" id="view-restaurante-detalle"></section>
+      <section class="view" id="view-trabajos"></section>
+      <section class="view" id="view-calendario"></section>
+      <section class="view" id="view-pagos"></section>
+      <section class="view" id="view-informes"></section>
+      <section class="view" id="view-equipo"></section>
+      <section class="view" id="view-planes"></section>
+      <section class="view" id="view-ajustes"></section>
+    </main>
+  </div>
+
+  <div id="modalRoot"></div>
+  <div class="toast" id="toast"><span>✓</span><p></p></div>
+
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
