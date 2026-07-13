@@ -87,6 +87,7 @@ const ROLE_LABELS = {
 
 const app = {
   state: null,
+  booted: false,
   view: 'inicio',
   selectedRestaurantId: null,
   detailTab: 'servicios',
@@ -96,6 +97,13 @@ const app = {
   settingsTab: 'general',
   calendarMonth: startOfMonth(new Date()),
   search: '',
+  auth: {
+    client: null,
+    session: null,
+    user: null,
+    ready: false,
+    mode: 'login',
+  },
 };
 
 function uid(prefix) {
@@ -197,6 +205,149 @@ function initials(name) {
     .map(part => part[0])
     .join('')
     .toUpperCase();
+}
+
+function hasSupabaseConfig() {
+  const config = window.CUOTLY_CONFIG || {};
+  return Boolean(config.supabaseUrl && config.supabaseAnonKey);
+}
+
+function storageKey() {
+  return app.auth.user?.id ? `${STORAGE_KEY}_${app.auth.user.id}` : STORAGE_KEY;
+}
+
+function getAuthName(user) {
+  const meta = user?.user_metadata || {};
+  return meta.full_name || meta.name || meta.display_name || user?.email?.split('@')[0] || 'Propietario';
+}
+
+function getAuthEmail(user) {
+  return user?.email || '';
+}
+
+function applyAuthUserToState() {
+  if (!app.state || !app.auth.user) return;
+  const owner = app.state.members.find(member => member.role === 'owner') || app.state.members[0];
+  if (!owner) return;
+  owner.id = 'user_owner';
+  owner.name = getAuthName(app.auth.user);
+  owner.email = getAuthEmail(app.auth.user);
+  owner.role = 'owner';
+  owner.active = true;
+  app.state.currentUserId = owner.id;
+}
+
+function renderAuthScreen(mode = app.auth.mode, message = '') {
+  app.auth.mode = mode;
+  const isRegister = mode === 'register';
+  const authScreen = $('#authScreen');
+  $('#appShell')?.classList.add('hidden');
+  authScreen.classList.remove('hidden');
+  authScreen.innerHTML = `
+    <section class="auth-card">
+      <div class="auth-brand"><span class="brand-mark">Q</span><strong>Cuotly</strong></div>
+      ${message ? `<div class="auth-message">${esc(message)}</div>` : ''}
+      <h1>${isRegister ? 'Crea tu cuenta' : 'Bienvenido de nuevo'}</h1>
+      <p>${isRegister ? 'Crea tu espacio privado para gestionar mantenimientos.' : 'Entra para consultar y actualizar los mantenimientos.'}</p>
+      <form id="${isRegister ? 'authRegisterForm' : 'authLoginForm'}" class="auth-form">
+        ${isRegister ? '<label>Nombre<input name="name" autocomplete="name" required></label>' : ''}
+        <label>Email<input name="email" type="email" autocomplete="email" required></label>
+        <label>Contrasena<input name="password" type="password" autocomplete="${isRegister ? 'new-password' : 'current-password'}" minlength="6" required></label>
+        ${isRegister ? '<label>Repite la contrasena<input name="confirmPassword" type="password" autocomplete="new-password" minlength="6" required></label>' : ''}
+        <button class="primary-button full-width" type="submit">${isRegister ? 'Crear cuenta' : 'Entrar en Cuotly'}</button>
+      </form>
+      <button class="secondary-button full-width auth-google" data-action="auth-google">Continuar con Google</button>
+      <button class="text-button auth-switch" data-action="auth-mode" data-mode="${isRegister ? 'login' : 'register'}">${isRegister ? 'Ya tengo cuenta' : 'Crear cuenta'}</button>
+    </section>
+  `;
+}
+
+function showAppShell() {
+  $('#authScreen')?.classList.add('hidden');
+  $('#appShell')?.classList.remove('hidden');
+}
+
+async function setupAuth() {
+  if (!hasSupabaseConfig() || !window.supabase?.createClient) {
+    app.auth.ready = true;
+    return true;
+  }
+  const config = window.CUOTLY_CONFIG;
+  app.auth.client = window.supabase.createClient(config.supabaseUrl, config.supabaseAnonKey);
+  const { data } = await app.auth.client.auth.getSession();
+  app.auth.session = data?.session || null;
+  app.auth.user = app.auth.session?.user || null;
+  app.auth.client.auth.onAuthStateChange((_event, session) => {
+    app.auth.session = session || null;
+    app.auth.user = session?.user || null;
+    if (!app.auth.ready) return;
+    if (app.auth.user) startApp();
+    else {
+      app.booted = false;
+      app.state = null;
+      renderAuthScreen('login');
+    }
+  });
+  app.auth.ready = true;
+  if (!app.auth.user) {
+    renderAuthScreen('login');
+    return false;
+  }
+  return true;
+}
+
+async function handleAuthLogin(form) {
+  if (!app.auth.client) return;
+  const data = Object.fromEntries(new FormData(form));
+  const { error } = await app.auth.client.auth.signInWithPassword({
+    email: data.email.trim(),
+    password: data.password,
+  });
+  if (error) {
+    renderAuthScreen('login', 'Revisa el email o la contrasena e intentalo de nuevo.');
+    return;
+  }
+  showToast('Sesion iniciada');
+}
+
+async function handleAuthRegister(form) {
+  if (!app.auth.client) return;
+  const data = Object.fromEntries(new FormData(form));
+  if (data.password !== data.confirmPassword) {
+    renderAuthScreen('register', 'Las contrasenas no coinciden.');
+    return;
+  }
+  const { data: result, error } = await app.auth.client.auth.signUp({
+    email: data.email.trim(),
+    password: data.password,
+    options: { data: { name: data.name.trim(), full_name: data.name.trim() } },
+  });
+  if (error) {
+    renderAuthScreen('register', 'No se ha podido crear la cuenta. Revisa los datos.');
+    return;
+  }
+  if (!result.session) {
+    renderAuthScreen('login', 'Cuenta creada. Revisa tu email si Supabase te pide confirmarla.');
+    return;
+  }
+  showToast('Cuenta creada');
+}
+
+async function handleGoogleLogin() {
+  if (!app.auth.client) return;
+  await app.auth.client.auth.signInWithOAuth({
+    provider: 'google',
+    options: { redirectTo: `${window.location.origin}${window.location.pathname}` },
+  });
+}
+
+async function logout() {
+  if (!app.auth.client) {
+    showToast('Sesion local cerrada');
+    return;
+  }
+  await app.auth.client.auth.signOut();
+  showToast('Sesion cerrada');
 }
 
 function plan(code) {
@@ -485,9 +636,10 @@ function seedState() {
 }
 
 function loadState() {
-  const stored = localStorage.getItem(STORAGE_KEY);
+  const stored = localStorage.getItem(storageKey());
   if (!stored) {
     app.state = seedState();
+    applyAuthUserToState();
     refreshBilling();
     saveState();
     return;
@@ -496,6 +648,7 @@ function loadState() {
     app.state = JSON.parse(stored);
     if (app.state.version !== 3) {
       app.state = seedState();
+      applyAuthUserToState();
       refreshBilling();
       saveState();
       return;
@@ -508,17 +661,20 @@ function loadState() {
     app.state.payments ||= [];
     app.state.reports ||= [];
     app.state.reminders ||= [];
+    applyAuthUserToState();
     refreshBilling();
     saveState();
   } catch {
     app.state = seedState();
+    applyAuthUserToState();
     refreshBilling();
     saveState();
   }
 }
 
 function saveState() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(app.state));
+  if (!app.state) return;
+  localStorage.setItem(storageKey(), JSON.stringify(app.state));
 }
 
 function showToast(message) {
@@ -1714,7 +1870,7 @@ function handleSettingsSubmit(form) {
 
 function resetDemo() {
   if (!confirm('Reiniciar los datos de Cuotly?')) return;
-  localStorage.removeItem(STORAGE_KEY);
+  localStorage.removeItem(storageKey());
   loadState();
   showToast('Datos reiniciados');
   showView('inicio');
@@ -1740,7 +1896,9 @@ function handleClick(event) {
   const action = actionEl.dataset.action;
   const id = actionEl.dataset.id;
   if (action === 'close-modal') closeModal();
-  if (action === 'logout') showToast('En la version publicada cerrara la sesion');
+  if (action === 'logout') logout();
+  if (action === 'auth-mode') renderAuthScreen(actionEl.dataset.mode || 'login');
+  if (action === 'auth-google') handleGoogleLogin();
   if (action === 'show-alerts') showAlertsModal();
   if (action === 'open-restaurant') showView('restaurante-detalle', { restaurantId: id });
   if (action === 'open-restaurant-modal') openRestaurantModal(id);
@@ -1780,6 +1938,14 @@ function handleSubmit(event) {
   const form = event.target;
   if (!(form instanceof HTMLFormElement)) return;
   event.preventDefault();
+  if (form.id === 'authLoginForm') {
+    handleAuthLogin(form);
+    return;
+  }
+  if (form.id === 'authRegisterForm') {
+    handleAuthRegister(form);
+    return;
+  }
   if (form.id === 'restaurantForm') handleRestaurantSubmit(form);
   if (form.id === 'serviceForm') handleServiceSubmit(form);
   if (form.id === 'taskForm') handleTaskSubmit(form);
@@ -1808,9 +1974,16 @@ function registerServiceWorker() {
   }
 }
 
-function init() {
+function startApp() {
   loadState();
   app.selectedRestaurantId = visibleRestaurants()[0]?.id || null;
+  showAppShell();
+  registerServiceWorker();
+  render();
+  app.booted = true;
+}
+
+async function init() {
   document.addEventListener('click', handleClick);
   document.addEventListener('submit', handleSubmit);
   document.addEventListener('input', handleInput);
@@ -1832,8 +2005,8 @@ function init() {
     event.stopPropagation();
     showView(item.dataset.view);
   }));
-  registerServiceWorker();
-  render();
+  const canStart = await setupAuth();
+  if (canStart) startApp();
 }
 
 init();
