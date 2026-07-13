@@ -343,11 +343,19 @@ async function handleGoogleLogin() {
 
 async function logout() {
   if (!app.auth.client) {
-    showToast('Sesion local cerrada');
+    app.booted = false;
+    app.state = null;
+    renderAuthScreen('login', 'Sesion cerrada.');
     return;
   }
-  await app.auth.client.auth.signOut();
-  showToast('Sesion cerrada');
+  const { error } = await app.auth.client.auth.signOut();
+  app.auth.session = null;
+  app.auth.user = null;
+  app.booted = false;
+  app.state = null;
+  closeDrawer();
+  closeModal();
+  renderAuthScreen('login', error ? 'Sesion cerrada en esta pantalla.' : 'Sesion cerrada.');
 }
 
 function plan(code) {
@@ -1895,10 +1903,10 @@ function handleClick(event) {
   if (!actionEl) return;
   const action = actionEl.dataset.action;
   const id = actionEl.dataset.id;
-  if (action === 'close-modal') closeModal();
-  if (action === 'logout') logout();
-  if (action === 'auth-mode') renderAuthScreen(actionEl.dataset.mode || 'login');
-  if (action === 'auth-google') handleGoogleLogin();
+  if (action === 'close-modal') { closeModal(); return; }
+  if (action === 'logout') { logout(); return; }
+  if (action === 'auth-mode') { renderAuthScreen(actionEl.dataset.mode || 'login'); return; }
+  if (action === 'auth-google') { handleGoogleLogin(); return; }
   if (action === 'show-alerts') showAlertsModal();
   if (action === 'open-restaurant') showView('restaurante-detalle', { restaurantId: id });
   if (action === 'open-restaurant-modal') openRestaurantModal(id);
