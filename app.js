@@ -242,6 +242,15 @@ function authErrorMessage(error, fallback) {
 
 function applyAuthUserToState() {
   if (!app.state || !app.auth.user) return;
+  const authEmail = getAuthEmail(app.auth.user).toLowerCase();
+  const matchedMember = app.state.members.find(member => String(member.email || '').toLowerCase() === authEmail);
+  if (matchedMember) {
+    matchedMember.name = matchedMember.name || getAuthName(app.auth.user);
+    matchedMember.email = getAuthEmail(app.auth.user);
+    matchedMember.active = true;
+    app.state.currentUserId = matchedMember.id;
+    return;
+  }
   const owner = app.state.members.find(member => member.role === 'owner') || app.state.members[0];
   if (!owner) return;
   owner.id = 'user_owner';
@@ -382,7 +391,27 @@ async function getAccessToken() {
   return app.auth.session?.access_token || '';
 }
 
-async function sendMemberInvitation(member) {
+function sharedStateForMember(member) {
+  const snapshot = JSON.parse(JSON.stringify(app.state || seedState()));
+  snapshot.members ||= [];
+  const existingIndex = snapshot.members.findIndex(item => String(item.email || '').toLowerCase() === member.email.toLowerCase());
+  const memberRecord = {
+    id: member.id,
+    name: member.name,
+    email: member.email,
+    role: member.role,
+    active: true,
+    invitedAt: member.invitedAt || nowIso(),
+    registeredUser: member.registeredUser || false,
+    addedAt: member.addedAt || '',
+  };
+  if (existingIndex >= 0) snapshot.members[existingIndex] = { ...snapshot.members[existingIndex], ...memberRecord };
+  else snapshot.members.push(memberRecord);
+  snapshot.currentUserId = member.id;
+  return snapshot;
+}
+
+async function sendMemberInvitation(member, mode = 'invite') {
   const token = await getAccessToken();
   if (!token) throw new Error('Tienes que iniciar sesion para invitar miembros.');
 
@@ -396,6 +425,8 @@ async function sendMemberInvitation(member) {
       name: member.name,
       email: member.email,
       role: member.role,
+      mode,
+      state: sharedStateForMember(member),
     }),
   });
 
@@ -1588,7 +1619,7 @@ function openMemberModal(id) {
         <label>Nombre<input name="name" required value="${esc(member.name || '')}"></label>
         <label>Email<input name="email" type="email" required value="${esc(member.email || '')}"></label>
         <label class="wide">Permiso<select name="role"><option value="worker" ${member.role === 'worker' ? 'selected' : ''}>Trabajador: solo sus servicios</option><option value="admin" ${member.role === 'admin' ? 'selected' : ''}>Administrador: puede gestionar todo</option>${member.role === 'owner' ? '<option value="owner" selected>Propietario</option>' : ''}</select></label>
-        ${!isEdit ? `<label class="wide">Tipo de alta<select name="memberMode"><option value="invite">Enviar invitacion por email</option><option value="existing">Anadir usuario ya registrado</option></select></label>` : ''}
+        ${!isEdit ? `<label class="wide">Tipo de alta<select name="memberMode"><option value="invite">Nuevo usuario: enviar invitacion</option><option value="existing">Usuario registrado: enviar enlace de acceso</option><option value="manual">Anadir sin enviar email</option></select></label>` : ''}
       </div>
       <div class="modal-actions"><button type="button" class="secondary-button" data-action="close-modal">Cancelar</button><button class="primary-button">${isEdit ? 'Guardar permisos' : 'Guardar miembro'}</button></div>
     </form>
@@ -1735,7 +1766,7 @@ async function handleMemberSubmit(form) {
   const previousText = submitButton?.textContent || '';
   if (submitButton) {
     submitButton.disabled = true;
-    submitButton.textContent = existing ? 'Guardando...' : data.memberMode === 'existing' ? 'Anadiendo...' : 'Enviando invitacion...';
+    submitButton.textContent = existing ? 'Guardando...' : data.memberMode === 'manual' ? 'Anadiendo...' : 'Enviando email...';
   }
 
   try {
@@ -1743,15 +1774,16 @@ async function handleMemberSubmit(form) {
       Object.assign(existing, payload);
       showToast('Permisos actualizados');
     } else {
-      if (data.memberMode === 'existing') {
+      if (data.memberMode === 'manual') {
         payload.registeredUser = true;
         payload.addedAt = nowIso();
       } else {
-        await sendMemberInvitation(payload);
+        payload.registeredUser = data.memberMode === 'existing';
+        await sendMemberInvitation(payload, data.memberMode);
         payload.invitedAt = nowIso();
       }
       app.state.members.push(payload);
-      showToast(data.memberMode === 'existing' ? 'Usuario registrado anadido' : 'Invitacion enviada por email');
+      showToast(data.memberMode === 'manual' ? 'Usuario registrado anadido' : data.memberMode === 'existing' ? 'Email de acceso enviado' : 'Invitacion enviada por email');
     }
     closeModal();
     render();
