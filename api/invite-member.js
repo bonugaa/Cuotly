@@ -113,6 +113,13 @@ export default async function handler(req, res) {
 
   const redirectTo = `${appUrlFromRequest(req)}/?invite=1`;
 
+  if (mode === 'sync') {
+    const existingUser = await findUserByEmail(email);
+    if (existingUser?.id) await upsertSharedState(existingUser.id, state);
+    res.status(200).json({ ok: true, mode: 'sync' });
+    return;
+  }
+
   if (mode === 'existing') {
     const existingUser = await findUserByEmail(email);
     if (!existingUser?.id) {

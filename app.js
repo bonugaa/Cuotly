@@ -404,6 +404,7 @@ function sharedStateForMember(member) {
     invitedAt: member.invitedAt || nowIso(),
     registeredUser: member.registeredUser || false,
     addedAt: member.addedAt || '',
+    restaurantIds: memberRestaurantIds(member),
   };
   if (existingIndex >= 0) snapshot.members[existingIndex] = { ...snapshot.members[existingIndex], ...memberRecord };
   else snapshot.members.push(memberRecord);
@@ -480,10 +481,27 @@ function canManage() {
   return role === 'owner' || role === 'admin';
 }
 
+function memberRestaurantIds(member) {
+  return Array.isArray(member?.restaurantIds) ? member.restaurantIds.filter(Boolean) : [];
+}
+
+function memberCanAccessRestaurant(member, restaurantId) {
+  if (!member || !restaurantId) return false;
+  if (member.role === 'owner') return true;
+  const restaurantIds = memberRestaurantIds(member);
+  if (member.role === 'admin' && restaurantIds.length === 0) return true;
+  if (restaurantIds.includes(restaurantId)) return true;
+  return app.state.services.some(service => service.restaurantId === restaurantId && service.assignedTo === member.id);
+}
+
+function canSeeRestaurant(restaurantId) {
+  return memberCanAccessRestaurant(getCurrentUser(), restaurantId);
+}
+
 function canSeeService(service) {
   const user = getCurrentUser();
   if (!user) return false;
-  if (user.role === 'owner' || user.role === 'admin') return true;
+  if (memberCanAccessRestaurant(user, service.restaurantId)) return true;
   return service.assignedTo === user.id;
 }
 
@@ -493,7 +511,7 @@ function visibleServices() {
 
 function visibleRestaurants() {
   const serviceRestaurantIds = new Set(visibleServices().map(service => service.restaurantId));
-  return app.state.restaurants.filter(restaurant => serviceRestaurantIds.has(restaurant.id) || canManage());
+  return app.state.restaurants.filter(restaurant => serviceRestaurantIds.has(restaurant.id) || canSeeRestaurant(restaurant.id));
 }
 
 function restaurantById(id) {
@@ -506,6 +524,17 @@ function memberById(id) {
 
 function servicesForRestaurant(restaurantId) {
   return app.state.services.filter(service => service.restaurantId === restaurantId && canSeeService(service));
+}
+
+function eligibleMembersForRestaurant(restaurantId, selectedId = '') {
+  const selected = memberById(selectedId);
+  const members = app.state.members.filter(member => {
+    if (!member.active) return false;
+    if (member.role === 'owner' || member.role === 'admin') return true;
+    return memberCanAccessRestaurant(member, restaurantId);
+  });
+  if (selected && selected.active && !members.some(member => member.id === selected.id)) members.push(selected);
+  return members;
 }
 
 function tasksForService(serviceId) {
@@ -731,6 +760,9 @@ function normalizeState(state) {
   state.payments ||= [];
   state.reports ||= [];
   state.reminders ||= [];
+  state.members.forEach(member => {
+    member.restaurantIds = memberRestaurantIds(member);
+  });
   return state;
 }
 
@@ -1418,12 +1450,19 @@ function teamCard(member) {
   const services = app.state.services.filter(service => service.assignedTo === member.id && service.status !== 'cancelled');
   const tasks = app.state.tasks.filter(task => task.assignedTo === member.id && !['completed', 'cancelled'].includes(task.status));
   const canRemove = canManage() && member.role !== 'owner' && member.id !== app.state.currentUserId;
+  const restaurantIds = memberRestaurantIds(member);
+  const restaurantScope = member.role === 'owner'
+    ? 'Todos los restaurantes'
+    : restaurantIds.length
+      ? restaurantIds.map(id => restaurantById(id)?.name).filter(Boolean).join(', ')
+      : member.role === 'admin' ? 'Todos los restaurantes' : 'Solo planes asignados';
   return `
     <article class="team-card ${member.role === 'owner' ? 'owner-card' : ''}">
       <div class="team-top"><span class="avatar big ${member.role === 'owner' ? 'avatar-green' : member.role === 'admin' ? 'peach' : 'sky'}">${initials(member.name)}</span><span class="role-pill ${member.role}">${ROLE_LABELS[member.role]}</span></div>
       <h3>${esc(member.name)}</h3><p>${esc(member.email)}</p>
       ${member.invitedAt ? `<p><small>Invitacion enviada ${formatDateTime(member.invitedAt)}</small></p>` : ''}
       ${member.registeredUser ? '<p><small>Usuario ya registrado</small></p>' : ''}
+      <p><small>Acceso: ${esc(restaurantScope)}</small></p>
       <div class="team-stats"><span><strong>${services.length}</strong>Servicios</span><span><strong>${tasks.length}</strong>Pendientes</span></div>
       <button class="secondary-button full-width" data-action="open-member-modal" data-id="${member.id}">Gestionar permisos</button>
       ${canRemove ? `<button class="secondary-button full-width danger-outline" data-action="remove-member" data-id="${member.id}">Expulsar miembro</button>` : ''}
@@ -1571,10 +1610,11 @@ function openServiceModal(id, defaults = {}) {
   const restaurantId = service.restaurantId || defaults.restaurantId || app.selectedRestaurantId || app.state.restaurants[0]?.id || '';
   const planCode = service.planCode || defaults.planCode || 'impulso';
   const months = Number(service.commitmentMonths || (planCode === 'menu' ? 1 : 6));
+  const restaurantOptions = visibleRestaurants();
   openModal(modalFrame(isEdit ? 'Editar servicio' : 'Anadir servicio', 'PLAN CONTRATADO', `
     <form id="serviceForm" data-id="${service.id || ''}">
       <div class="form-grid">
-        <label class="wide">Restaurante<select name="restaurantId" required>${app.state.restaurants.map(item => `<option value="${item.id}" ${item.id === restaurantId ? 'selected' : ''}>${esc(item.name)}</option>`).join('')}</select></label>
+        <label class="wide">Restaurante<select name="restaurantId" required>${restaurantOptions.map(item => `<option value="${item.id}" ${item.id === restaurantId ? 'selected' : ''}>${esc(item.name)}</option>`).join('')}</select></label>
         <label>Servicio<select name="planCode" required>${Object.values(PLAN_CATALOG).map(p => `<option value="${p.code}" ${p.code === planCode ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select></label>
         <label>Compromiso<select name="commitmentMonths">${[1,3,6,9,12].map(value => `<option value="${value}" ${value === months ? 'selected' : ''}>${value} mes${value > 1 ? 'es' : ''}</option>`).join('')}</select></label>
         <label>Fecha de inicio<input name="startDate" type="date" value="${service.startDate || iso()}"></label>
@@ -1613,12 +1653,20 @@ function openTaskModal(id, defaults = {}) {
 function openMemberModal(id) {
   const member = app.state.members.find(item => item.id === id) || {};
   const isEdit = Boolean(member.id);
+  const assignedRestaurantIds = memberRestaurantIds(member);
+  const restaurantAccessFields = app.state.restaurants.map(restaurant => `
+    <label class="check-card">
+      <input type="checkbox" name="restaurantIds" value="${restaurant.id}" ${assignedRestaurantIds.includes(restaurant.id) ? 'checked' : ''}>
+      <span><strong>${esc(restaurant.name)}</strong><small>${esc(app.state.services.filter(service => service.restaurantId === restaurant.id).map(service => plan(service.planCode).name).join(' + ') || 'Sin plan')}</small></span>
+    </label>
+  `).join('');
   openModal(modalFrame(isEdit ? 'Gestionar miembro' : 'Invitar miembro', 'EQUIPO', `
     <form id="memberForm" data-id="${member.id || ''}">
       <div class="form-grid">
         <label>Nombre<input name="name" required value="${esc(member.name || '')}"></label>
         <label>Email<input name="email" type="email" required value="${esc(member.email || '')}"></label>
         <label class="wide">Permiso<select name="role"><option value="worker" ${member.role === 'worker' ? 'selected' : ''}>Trabajador: solo sus servicios</option><option value="admin" ${member.role === 'admin' ? 'selected' : ''}>Administrador: puede gestionar todo</option>${member.role === 'owner' ? '<option value="owner" selected>Propietario</option>' : ''}</select></label>
+        ${member.role !== 'owner' ? `<div class="wide assignment-box"><div class="assignment-title"><strong>Restaurantes asignados</strong><small>Marca uno o varios restaurantes. Si no marcas ninguno, los trabajadores solo veran los planes que tengan asignados directamente.</small></div><div class="check-grid">${restaurantAccessFields || '<p class="muted-note">Primero crea un restaurante.</p>'}</div></div>` : ''}
         ${!isEdit ? `<label class="wide">Tipo de alta<select name="memberMode"><option value="invite">Nuevo usuario: enviar invitacion</option><option value="existing">Usuario registrado: enviar enlace de acceso</option><option value="manual">Anadir sin enviar email</option></select></label>` : ''}
       </div>
       <div class="modal-actions"><button type="button" class="secondary-button" data-action="close-modal">Cancelar</button><button class="primary-button">${isEdit ? 'Guardar permisos' : 'Guardar miembro'}</button></div>
@@ -1747,10 +1795,12 @@ function handleTaskSubmit(form) {
 }
 
 async function handleMemberSubmit(form) {
-  const data = Object.fromEntries(new FormData(form));
+  const formData = new FormData(form);
+  const data = Object.fromEntries(formData);
   const id = form.dataset.id || uid('user');
   const existing = app.state.members.find(item => item.id === id);
   if (existing?.role === 'owner') data.role = 'owner';
+  const restaurantIds = data.role === 'owner' ? [] : formData.getAll('restaurantIds').map(String);
   const payload = {
     id,
     name: data.name.trim(),
@@ -1760,6 +1810,7 @@ async function handleMemberSubmit(form) {
     invitedAt: existing?.invitedAt || '',
     registeredUser: existing?.registeredUser || false,
     addedAt: existing?.addedAt || '',
+    restaurantIds,
   };
 
   const submitButton = form.querySelector('button.primary-button');
@@ -1772,6 +1823,11 @@ async function handleMemberSubmit(form) {
   try {
     if (existing) {
       Object.assign(existing, payload);
+      try {
+        await sendMemberInvitation(payload, 'sync');
+      } catch (error) {
+        console.warn('No se pudo sincronizar el acceso del miembro', error);
+      }
       showToast('Permisos actualizados');
     } else {
       if (data.memberMode === 'manual') {
