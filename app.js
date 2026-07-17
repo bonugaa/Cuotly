@@ -373,6 +373,37 @@ async function logout() {
   renderAuthScreen('login', error ? 'Sesion cerrada en esta pantalla.' : 'Sesion cerrada.');
 }
 
+async function getAccessToken() {
+  if (!app.auth.client) return '';
+  if (app.auth.session?.access_token) return app.auth.session.access_token;
+  const { data } = await app.auth.client.auth.getSession();
+  app.auth.session = data?.session || null;
+  app.auth.user = app.auth.session?.user || null;
+  return app.auth.session?.access_token || '';
+}
+
+async function sendMemberInvitation(member) {
+  const token = await getAccessToken();
+  if (!token) throw new Error('Tienes que iniciar sesion para invitar miembros.');
+
+  const response = await fetch('/api/invite-member', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      name: member.name,
+      email: member.email,
+      role: member.role,
+    }),
+  });
+
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(result.error || 'No se pudo enviar la invitacion.');
+  return result;
+}
+
 function plan(code) {
   return PLAN_CATALOG[code] || PLAN_CATALOG.presencia;
 }
@@ -1360,6 +1391,7 @@ function teamCard(member) {
     <article class="team-card ${member.role === 'owner' ? 'owner-card' : ''}">
       <div class="team-top"><span class="avatar big ${member.role === 'owner' ? 'avatar-green' : member.role === 'admin' ? 'peach' : 'sky'}">${initials(member.name)}</span><span class="role-pill ${member.role}">${ROLE_LABELS[member.role]}</span></div>
       <h3>${esc(member.name)}</h3><p>${esc(member.email)}</p>
+      ${member.invitedAt ? `<p><small>Invitacion enviada ${formatDateTime(member.invitedAt)}</small></p>` : ''}
       <div class="team-stats"><span><strong>${services.length}</strong>Servicios</span><span><strong>${tasks.length}</strong>Pendientes</span></div>
       <button class="secondary-button full-width" data-action="open-member-modal" data-id="${member.id}">Gestionar permisos</button>
       ${canRemove ? `<button class="secondary-button full-width danger-outline" data-action="remove-member" data-id="${member.id}">Expulsar miembro</button>` : ''}
@@ -1681,17 +1713,46 @@ function handleTaskSubmit(form) {
   render();
 }
 
-function handleMemberSubmit(form) {
+async function handleMemberSubmit(form) {
   const data = Object.fromEntries(new FormData(form));
   const id = form.dataset.id || uid('user');
   const existing = app.state.members.find(item => item.id === id);
   if (existing?.role === 'owner') data.role = 'owner';
-  const payload = { id, name: data.name.trim(), email: data.email.trim(), role: data.role, active: true };
-  if (existing) Object.assign(existing, payload);
-  else app.state.members.push(payload);
-  closeModal();
-  showToast(existing ? 'Permisos actualizados' : 'Miembro anadido');
-  render();
+  const payload = {
+    id,
+    name: data.name.trim(),
+    email: data.email.trim(),
+    role: data.role,
+    active: true,
+    invitedAt: existing?.invitedAt || '',
+  };
+
+  const submitButton = form.querySelector('button.primary-button');
+  const previousText = submitButton?.textContent || '';
+  if (submitButton) {
+    submitButton.disabled = true;
+    submitButton.textContent = existing ? 'Guardando...' : 'Enviando invitacion...';
+  }
+
+  try {
+    if (existing) {
+      Object.assign(existing, payload);
+      showToast('Permisos actualizados');
+    } else {
+      await sendMemberInvitation(payload);
+      payload.invitedAt = nowIso();
+      app.state.members.push(payload);
+      showToast('Invitacion enviada por email');
+    }
+    closeModal();
+    render();
+  } catch (error) {
+    showToast(error.message || 'No se pudo enviar la invitacion');
+    if (submitButton) {
+      submitButton.disabled = false;
+      submitButton.textContent = previousText;
+    }
+  }
 }
 
 function handlePlanChangeSubmit(form) {

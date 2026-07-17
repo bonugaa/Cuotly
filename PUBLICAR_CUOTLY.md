@@ -76,12 +76,17 @@ En Vercel, dentro del proyecto de Cuotly, anade estas variables:
 
 - `SUPABASE_URL`
 - `SUPABASE_ANON_KEY`
+- `SUPABASE_SERVICE_ROLE_KEY`
 
 Se sacan de Supabase en:
 
 `Project Settings` -> `API Keys`
 
 La URL es la URL del proyecto. La clave publica es la `publishable key` o `anon key`.
+
+La clave `SUPABASE_SERVICE_ROLE_KEY` es la clave secreta de Supabase, la que aparece en `Secret keys`. Debe quedarse solo en Vercel y nunca se pega dentro del codigo visible de la app.
+
+Esta clave secreta permite que Cuotly envie invitaciones por email desde la seccion Equipo.
 
 ## Despues de publicar
 
