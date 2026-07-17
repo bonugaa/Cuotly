@@ -1392,6 +1392,7 @@ function teamCard(member) {
       <div class="team-top"><span class="avatar big ${member.role === 'owner' ? 'avatar-green' : member.role === 'admin' ? 'peach' : 'sky'}">${initials(member.name)}</span><span class="role-pill ${member.role}">${ROLE_LABELS[member.role]}</span></div>
       <h3>${esc(member.name)}</h3><p>${esc(member.email)}</p>
       ${member.invitedAt ? `<p><small>Invitacion enviada ${formatDateTime(member.invitedAt)}</small></p>` : ''}
+      ${member.registeredUser ? '<p><small>Usuario ya registrado</small></p>' : ''}
       <div class="team-stats"><span><strong>${services.length}</strong>Servicios</span><span><strong>${tasks.length}</strong>Pendientes</span></div>
       <button class="secondary-button full-width" data-action="open-member-modal" data-id="${member.id}">Gestionar permisos</button>
       ${canRemove ? `<button class="secondary-button full-width danger-outline" data-action="remove-member" data-id="${member.id}">Expulsar miembro</button>` : ''}
@@ -1587,8 +1588,9 @@ function openMemberModal(id) {
         <label>Nombre<input name="name" required value="${esc(member.name || '')}"></label>
         <label>Email<input name="email" type="email" required value="${esc(member.email || '')}"></label>
         <label class="wide">Permiso<select name="role"><option value="worker" ${member.role === 'worker' ? 'selected' : ''}>Trabajador: solo sus servicios</option><option value="admin" ${member.role === 'admin' ? 'selected' : ''}>Administrador: puede gestionar todo</option>${member.role === 'owner' ? '<option value="owner" selected>Propietario</option>' : ''}</select></label>
+        ${!isEdit ? `<label class="wide">Tipo de alta<select name="memberMode"><option value="invite">Enviar invitacion por email</option><option value="existing">Anadir usuario ya registrado</option></select></label>` : ''}
       </div>
-      <div class="modal-actions"><button type="button" class="secondary-button" data-action="close-modal">Cancelar</button><button class="primary-button">${isEdit ? 'Guardar permisos' : 'Crear invitacion'}</button></div>
+      <div class="modal-actions"><button type="button" class="secondary-button" data-action="close-modal">Cancelar</button><button class="primary-button">${isEdit ? 'Guardar permisos' : 'Guardar miembro'}</button></div>
     </form>
   `));
 }
@@ -1725,13 +1727,15 @@ async function handleMemberSubmit(form) {
     role: data.role,
     active: true,
     invitedAt: existing?.invitedAt || '',
+    registeredUser: existing?.registeredUser || false,
+    addedAt: existing?.addedAt || '',
   };
 
   const submitButton = form.querySelector('button.primary-button');
   const previousText = submitButton?.textContent || '';
   if (submitButton) {
     submitButton.disabled = true;
-    submitButton.textContent = existing ? 'Guardando...' : 'Enviando invitacion...';
+    submitButton.textContent = existing ? 'Guardando...' : data.memberMode === 'existing' ? 'Anadiendo...' : 'Enviando invitacion...';
   }
 
   try {
@@ -1739,10 +1743,15 @@ async function handleMemberSubmit(form) {
       Object.assign(existing, payload);
       showToast('Permisos actualizados');
     } else {
-      await sendMemberInvitation(payload);
-      payload.invitedAt = nowIso();
+      if (data.memberMode === 'existing') {
+        payload.registeredUser = true;
+        payload.addedAt = nowIso();
+      } else {
+        await sendMemberInvitation(payload);
+        payload.invitedAt = nowIso();
+      }
       app.state.members.push(payload);
-      showToast('Invitacion enviada por email');
+      showToast(data.memberMode === 'existing' ? 'Usuario registrado anadido' : 'Invitacion enviada por email');
     }
     closeModal();
     render();
