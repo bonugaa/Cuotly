@@ -249,6 +249,7 @@ function applyAuthUserToState() {
     matchedMember.email = getAuthEmail(app.auth.user);
     matchedMember.active = true;
     app.state.currentUserId = matchedMember.id;
+    if (matchedMember.role === 'owner') app.state.ownerUserId = app.auth.user.id;
     return;
   }
   const owner = app.state.members.find(member => member.role === 'owner') || app.state.members[0];
@@ -259,6 +260,7 @@ function applyAuthUserToState() {
   owner.role = 'owner';
   owner.active = true;
   app.state.currentUserId = owner.id;
+  app.state.ownerUserId = app.auth.user.id;
 }
 
 function renderAuthScreen(mode = app.auth.mode, message = '') {
@@ -393,6 +395,7 @@ async function getAccessToken() {
 
 function sharedStateForMember(member) {
   const snapshot = JSON.parse(JSON.stringify(app.state || seedState()));
+  snapshot.ownerUserId = snapshot.ownerUserId || app.auth.user?.id || '';
   snapshot.members ||= [];
   const existingIndex = snapshot.members.findIndex(item => String(item.email || '').toLowerCase() === member.email.toLowerCase());
   const memberRecord = {
@@ -768,11 +771,21 @@ function normalizeState(state) {
 
 async function loadCloudState() {
   if (!app.auth.client || !app.auth.user) return null;
-  const { data, error } = await app.auth.client
-    .from('cuotly_user_states')
-    .select('state')
-    .eq('user_id', app.auth.user.id)
-    .maybeSingle();
+  const token = await getAccessToken();
+  if (token) {
+    try {
+      const response = await fetch('/api/shared-state', { headers: { authorization: `Bearer ${token}` } });
+      if (response.ok) {
+        const result = await response.json();
+        app.persistence.cloudAvailable = true;
+        app.persistence.lastCloudError = '';
+        return result.state || null;
+      }
+    } catch (error) {
+      app.persistence.lastCloudError = error.message || 'No se pudo cargar el espacio compartido';
+    }
+  }
+  const { data, error } = await app.auth.client.from('cuotly_user_states').select('state').eq('user_id', app.auth.user.id).maybeSingle();
   if (error) {
     app.persistence.cloudAvailable = false;
     app.persistence.lastCloudError = error.message || 'No se pudo cargar la nube';
@@ -786,6 +799,27 @@ async function loadCloudState() {
 async function saveCloudStateNow() {
   if (!app.auth.client || !app.auth.user || !app.state || app.persistence.loading) return;
   const payload = JSON.parse(JSON.stringify(app.state));
+  payload.ownerUserId = payload.ownerUserId || app.auth.user.id;
+  const token = await getAccessToken();
+  if (token) {
+    try {
+      const response = await fetch('/api/shared-state', {
+        method: 'PUT',
+        headers: {
+          'content-type': 'application/json',
+          authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ state: payload }),
+      });
+      if (response.ok) {
+        app.persistence.cloudAvailable = true;
+        app.persistence.lastCloudError = '';
+        return;
+      }
+    } catch (error) {
+      app.persistence.lastCloudError = error.message || 'No se pudo guardar el espacio compartido';
+    }
+  }
   const { error } = await app.auth.client
     .from('cuotly_user_states')
     .upsert({
@@ -1557,7 +1591,7 @@ function settingsTabContent() {
       <label>IRPF (%)<input name="irpfRate" type="number" min="0" step="0.01" value="${s.irpfRate}"></label>
       <button class="primary-button">Guardar cambios</button>
     </form>
-    <div class="settings-danger"><button class="secondary-button danger-outline" data-action="reset-demo">Reiniciar datos de prueba</button></div>
+    <div class="settings-danger"><button class="secondary-button danger-outline" data-action="reset-demo">Reiniciar datos</button></div>
   `;
 }
 
@@ -2167,7 +2201,7 @@ function handleSettingsSubmit(form) {
 }
 
 async function resetDemo() {
-  if (!confirm('Reiniciar los datos de Cuotly?')) return;
+  if (!confirm('Reiniciar todos los datos de Cuotly?')) return;
   localStorage.removeItem(storageKey());
   if (app.auth.client && app.auth.user) {
     await app.auth.client.from('cuotly_user_states').delete().eq('user_id', app.auth.user.id);
