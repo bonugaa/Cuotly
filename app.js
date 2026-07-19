@@ -2075,7 +2075,38 @@ function cancelService(id) {
   render();
 }
 
-function markPaymentPaid(id) {
+async function sendPaymentToFiometra(payment) {
+  if (!payment || payment.sentToFiometra) return { ok: true, skipped: true };
+  const token = await getAccessToken();
+  if (!token) throw new Error('AUTH_REQUIRED');
+  const service = app.state.services.find(item => item.id === payment.serviceId);
+  const restaurant = restaurantById(payment.restaurantId);
+  const response = await fetch('/api/fiometra-payment', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      payment: {
+        ...payment,
+        irpfRate: Number(app.state.settings.irpfRate || 15),
+      },
+      restaurant,
+      service: service ? {
+        ...service,
+        planName: plan(service.planCode).name,
+      } : null,
+    }),
+  });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(result.error || 'No se pudo registrar en Fiometra.');
+  payment.sentToFiometra = true;
+  payment.fiometraSaleId = result.saleId || payment.fiometraSaleId || '';
+  return result;
+}
+
+async function markPaymentPaid(id) {
   const payment = app.state.payments.find(item => item.id === id);
   if (!payment) return;
   payment.status = 'paid';
@@ -2083,14 +2114,33 @@ function markPaymentPaid(id) {
   payment.method ||= 'Transferencia';
   const service = app.state.services.find(item => item.id === payment.serviceId);
   if (service && service.status !== 'cancelled') service.status = 'active';
-  showToast('Pago marcado como recibido');
+  try {
+    await sendPaymentToFiometra(payment);
+    showToast('Pago recibido y registrado en Fiometra');
+  } catch (error) {
+    payment.sentToFiometra = false;
+    showToast(error.message === 'AUTH_REQUIRED' ? 'Pago recibido. Inicia sesion para pasarlo a Fiometra.' : `Pago recibido. Fiometra pendiente: ${error.message}`);
+  }
+  saveState();
   render();
 }
 
-function toggleFiometra(id) {
+async function toggleFiometra(id) {
   const payment = app.state.payments.find(item => item.id === id);
   if (!payment) return;
+  if (!payment.sentToFiometra) {
+    try {
+      await sendPaymentToFiometra(payment);
+      saveState();
+      showToast('Pago registrado en Fiometra');
+    } catch (error) {
+      showToast(error.message || 'No se pudo pasar a Fiometra');
+    }
+    render();
+    return;
+  }
   payment.sentToFiometra = !payment.sentToFiometra;
+  saveState();
   showToast(payment.sentToFiometra ? 'Pago preparado para Fiometra' : 'Pago quitado de Fiometra');
   render();
 }
@@ -2135,7 +2185,7 @@ function showAlertsModal() {
   `));
 }
 
-function handleClick(event) {
+async function handleClick(event) {
   if (event.defaultPrevented) return;
   const actionEl = event.target.closest('[data-action]');
   const viewEl = event.target.closest('[data-view], [data-view-target]');
@@ -2166,8 +2216,8 @@ function handleClick(event) {
   if (action === 'start-task') setTaskStatus(id, 'in_progress');
   if (action === 'complete-task') setTaskStatus(id, 'completed');
   if (action === 'wait-task') setTaskStatus(id, 'waiting');
-  if (action === 'mark-paid') markPaymentPaid(id);
-  if (action === 'toggle-fiometra') toggleFiometra(id);
+  if (action === 'mark-paid') await markPaymentPaid(id);
+  if (action === 'toggle-fiometra') await toggleFiometra(id);
   if (action === 'remove-member') removeMember(id);
   if (action === 'delete-restaurant') deleteRestaurant(id);
   if (action === 'delete-task') deleteTask(id);
