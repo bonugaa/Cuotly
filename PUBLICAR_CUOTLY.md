@@ -4,13 +4,11 @@ Esta guia es para publicar Cuotly igual que hicimos con Fiometra usando GitHub, 
 
 ## Punto importante
 
-La app ya funciona en local, pero ahora mismo guarda los datos en el navegador del dispositivo. Para usarla en serio con empleados, cuentas privadas y datos compartidos, hay que conectarla a Supabase antes de meter datos reales.
-
-Puedes publicarla ya para verla online, probarla y revisarla en movil, pero no conviene usarla con datos importantes hasta terminar la conexion con la base de datos.
+Cuotly usa Supabase para guardar el estado compartido por cuenta. Los cambios hechos en movil y ordenador se sincronizan al iniciar sesion con la misma cuenta. Mantén las variables de entorno de Vercel conectadas a su proyecto de Supabase correspondiente.
 
 ## Archivos que hay que subir a GitHub
 
-Sube el contenido de la carpeta `Cuotly-Prototipo`.
+Para esta actualizacion, sube el contenido de la carpeta `Cuotly-Actualizar-Planes-20260725`.
 
 Archivos principales:
 
@@ -33,7 +31,7 @@ No hace falta subir la carpeta `dist`. Vercel la crea automaticamente.
 1. Crea un repositorio nuevo en GitHub.
 2. Puedes llamarlo `cuotly`.
 3. Entra en el repositorio.
-4. Sube los archivos de `Cuotly-Prototipo`.
+4. Sube el contenido de `Cuotly-Actualizar-Planes-20260725` respetando las carpetas `api` y `supabase`.
 5. Pulsa `Commit changes`.
 
 ## Paso 2: Supabase
@@ -55,14 +53,22 @@ Si la app ya estaba publicada y solo necesitas activar la sincronizacion entre m
 
 Ese archivo crea el guardado compartido por cuenta.
 
+## Actualizacion de planes 2026-07-25
+
+Antes de usar los nuevos planes Presencia, Impulso, Premium y Menu Diario, ejecuta tambien en el SQL Editor:
+
+`supabase/upgrade-planes-20260725.sql`
+
+No borra restaurantes, pagos ni tareas. Solo prepara las columnas y los estados nuevos para pausas, creditos adicionales, cuotas, Menu Diario y cancelaciones por impago.
+
 ## Paso 3: Vercel
 
 1. Entra en Vercel.
 2. Pulsa `Add New...`.
 3. Pulsa `Project`.
 4. Importa el repositorio de GitHub de Cuotly.
-5. Si subiste solo el contenido de `Cuotly-Prototipo`, deja `Root Directory` como `./`.
-6. Si subiste toda la carpeta completa, pon `Root Directory` como `Cuotly-Prototipo`.
+5. Si subiste el contenido de la carpeta de actualizacion, deja `Root Directory` como `./`.
+6. No subas la carpeta contenedora completa dentro del repositorio.
 7. Pulsa `Deploy`.
 
 El proyecto ya incluye:

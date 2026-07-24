@@ -6,49 +6,52 @@ const PLAN_CATALOG = {
     name: 'Plan Presencia',
     label: 'ESENCIAL',
     className: 'presencia',
-    price: 99,
-    prices: { 1: 99, 3: 96, 6: 94, 9: 92, 12: 89 },
-    quotas: { small: 8, photos: 8, calls: 1, incidents: 8 },
+    price: 119,
+    prices: { 1: 119 },
+    quotas: { small: 8, medium: 0, large: 0, photos: 5 },
     response: '48-72 h laborables',
-    report: ['Cambios realizados', 'Incidencias', 'Cambios restantes'],
-    includes: ['Revision mensual', '8 cambios pequenos', '8 fotografias', 'Revision movil', 'Backup trimestral', 'Informe mensual'],
+    backupEvery: 3,
+    report: ['Solicitudes recibidas', 'Cambios pequenos y fotografias', 'Cambios adicionales', 'Errores corregidos', 'Incidencias pendientes', 'Estado general de la web'],
+    includes: ['Revision mensual completa', '8 cambios pequenos por ciclo', '5 cambios fotograficos por ciclo', 'Atencion de incidencias', 'Copia trimestral', 'Informe mensual'],
   },
   impulso: {
     code: 'impulso',
     name: 'Plan Impulso',
     label: 'PRINCIPAL',
     className: 'impulso',
-    price: 149,
-    prices: { 1: 149, 3: 145, 6: 142, 9: 139, 12: 134 },
-    quotas: { small: 15, medium: 3, section: 1, photos: 18, calls: 2, incidents: 15 },
+    price: 199,
+    prices: { 1: 199 },
+    quotas: { small: 16, medium: 3, large: 0, photos: 12, external_incident: 2 },
     response: '24-48 h laborables',
-    report: ['Cambios realizados', 'Incidencias', 'Sugerencias', 'Proximos pasos'],
-    includes: ['Revision avanzada', '15 cambios pequenos', '3 cambios medianos', '1 bloque sencillo', '18 fotografias', '2 llamadas'],
+    backupEvery: 3,
+    report: ['Solicitudes y cambios realizados', 'Cambios pequenos, medianos y fotograficos', 'Cambios adicionales', 'Incidencias externas gestionadas', 'Contenido desactualizado', 'Sugerencias y proximos pasos'],
+    includes: ['Revision avanzada', '16 cambios pequenos por ciclo', '3 cambios medianos por ciclo', '12 cambios fotograficos por ciclo', '2 incidencias externas', 'Informe ampliado'],
   },
   premium: {
     code: 'premium',
     name: 'Plan Premium',
     label: 'AVANZADO',
     className: 'premium',
-    price: 299,
-    prices: { 1: 299, 3: 290, 6: 284, 9: 278, 12: 269 },
-    quotas: { small: 25, medium: 5, large: 1, section: 2, photos: 30, calls: 4, incidents: 25 },
-    response: '24 h laborables',
-    report: ['Cambios realizados', 'Incidencias', 'Recomendaciones', 'Proximos pasos'],
-    includes: ['Revision completa', '25 pequenos', '5 medianos', '1 grande', '2 secciones', '30 fotografias', '4 llamadas'],
+    price: 399,
+    prices: { 1: 399 },
+    quotas: { small: 25, medium: 5, large: 1, photos: 24, external_incident: 3 },
+    response: '12-24 h laborables',
+    backupEvery: 1,
+    report: ['Tareas, cambios y cuotas', 'Incidencias externas', 'Contenido y sugerencias', 'Revision tecnica, seguridad y rendimiento', 'Notas SEO basicas', 'Estado de copia de seguridad', 'Estado general de la web'],
+    includes: ['Revision Premium', '25 cambios pequenos por ciclo', '5 cambios medianos por ciclo', '1 cambio grande por ciclo', '24 cambios fotograficos por ciclo', 'Soporte prioritario'],
   },
   menu: {
     code: 'menu',
     name: 'Menu Diario',
     label: 'SERVICIO INDEPENDIENTE',
     className: 'menu',
-    price: 149,
-    premiumPrice: 135,
-    prices: { 1: 149 },
-    quotas: { menu_update: 20, incidents: 20 },
+    price: 169,
+    premiumPrice: 149,
+    prices: { 1: 169 },
+    quotas: { menu_update: 25 },
     response: 'Lunes a viernes',
-    report: ['Menus publicados', 'Incidencias', 'Actualizaciones restantes'],
-    includes: ['20 actualizaciones mensuales', 'Lunes a viernes', 'Correcciones de formato', 'WhatsApp o correo', 'Informe combinado'],
+    report: [],
+    includes: ['25 actualizaciones por ciclo', 'Publicacion de lunes a viernes', 'Revision y correccion propia', 'WhatsApp o correo por escrito', 'Sin informe mensual'],
   },
 };
 
@@ -56,11 +59,23 @@ const TASK_TYPES = {
   small: 'Cambio pequeno',
   medium: 'Cambio mediano',
   large: 'Cambio grande',
-  section: 'Seccion',
   photos: 'Fotografias',
-  calls: 'Llamada',
-  incidents: 'Incidencia',
+  external_incident: 'Incidencia externa',
+  review: 'Revision de la web',
+  backup: 'Copia de seguridad',
+  seo: 'Revision SEO basica',
+  suggestion: 'Sugerencia de mejora',
+  incident: 'Incidencia',
   menu_update: 'Menu Diario',
+};
+
+const BASE_PLAN_CODES = ['presencia', 'impulso', 'premium'];
+const BASE_QUOTA_TYPES = ['small', 'medium', 'large', 'photos'];
+const EXTRA_PACKAGES = {
+  small: [{ quantity: 1, price: 15 }, { quantity: 2, price: 25 }, { quantity: 5, price: 55 }, { quantity: 10, price: 95 }],
+  photos: [{ quantity: 1, price: 12 }, { quantity: 2, price: 22 }, { quantity: 5, price: 50 }, { quantity: 10, price: 90 }, { quantity: 12, price: 105 }],
+  medium: [{ quantity: 1, price: 50 }, { quantity: 2, price: 90 }, { quantity: 3, price: 125 }],
+  large: [{ quantity: 1, price: 140 }, { quantity: 2, price: 250 }],
 };
 
 const STATUS_LABELS = {
@@ -77,6 +92,7 @@ const PAYMENT_LABELS = {
   late: 'Retrasado',
   pending: 'Sin pagar',
   suspended: 'Suspendido',
+  cancelled: 'Cancelado',
 };
 
 const ROLE_LABELS = {
@@ -504,7 +520,7 @@ function canSeeRestaurant(restaurantId) {
 function canSeeService(service) {
   const user = getCurrentUser();
   if (!user) return false;
-  if (memberCanAccessRestaurant(user, service.restaurantId)) return true;
+  if (user.role === 'owner' || user.role === 'admin') return memberCanAccessRestaurant(user, service.restaurantId);
   return service.assignedTo === user.id;
 }
 
@@ -544,71 +560,145 @@ function tasksForService(serviceId) {
   return app.state.tasks.filter(task => task.serviceId === serviceId);
 }
 
+function daysBetween(start, end) {
+  const from = parseDate(start);
+  const to = parseDate(end);
+  return Math.max(0, Math.round((to - from) / 86400000));
+}
+
+function initializeServiceCycle(service, reference = new Date()) {
+  if (service.cycleStartDate && service.cycleEndDate) return;
+  let start = parseDate(service.startDate || iso());
+  let end = addDays(addMonths(start, 1), -1);
+  let cycleIndex = 1;
+  const frozenAt = service.pausedAt ? parseDate(service.pausedAt) : null;
+  const target = frozenAt && frozenAt < reference ? frozenAt : reference;
+  while (target > end) {
+    start = addDays(end, 1);
+    end = addDays(addMonths(start, 1), -1);
+    cycleIndex += 1;
+  }
+  service.cycleStartDate = iso(start);
+  service.cycleEndDate = iso(end);
+  service.cycleIndex = Number(service.cycleIndex || cycleIndex);
+}
+
 function serviceCycleStart(service, reference = new Date()) {
-  let start = parseDate(service.startDate);
-  while (addMonths(start, 1) <= reference) start = addMonths(start, 1);
-  return start;
+  initializeServiceCycle(service, reference);
+  return parseDate(service.cycleStartDate);
 }
 
 function serviceCycleEnd(service, reference = new Date()) {
-  return addDays(addMonths(serviceCycleStart(service, reference), 1), -1);
+  initializeServiceCycle(service, reference);
+  return parseDate(service.cycleEndDate);
+}
+
+function serviceNextPaymentDate(service, reference = new Date()) {
+  return addDays(serviceCycleEnd(service, reference), 1);
 }
 
 function commitmentEnd(service) {
-  return addMonths(parseDate(service.startDate), Number(service.commitmentMonths || 1));
+  const base = service.commitmentStartDate || service.startDate;
+  const initialMonths = Number(service.initialCommitmentMonths || service.commitmentMonths || 3);
+  const completedPauses = (service.pauseHistory || []).reduce((sum, pause) => sum + Number(pause.days || 0), 0);
+  return addDays(addMonths(parseDate(base), initialMonths), completedPauses);
 }
 
 function cancellationNoticeDate(service) {
-  const end = serviceCycleEnd(service);
-  let date = end;
-  let remaining = app.state.settings.cancelNoticeWorkdays;
-  while (remaining > 0) {
-    date = addDays(date, -1);
-    if (isWorkday(date, app.state.settings)) remaining -= 1;
-  }
-  return date;
+  return addDays(serviceNextPaymentDate(service), -3);
+}
+
+function pauseDuration(service) {
+  return (service.pauseHistory || []).reduce((sum, pause) => sum + Number(pause.days || 0), 0);
+}
+
+function isServicePaused(service) {
+  return service.status === 'paused' || Boolean(service.pausedAt);
+}
+
+function activeBaseService(restaurantId) {
+  return app.state.services.find(service =>
+    service.restaurantId === restaurantId &&
+    BASE_PLAN_CODES.includes(service.planCode) &&
+    !['cancelled'].includes(service.status)
+  );
+}
+
+function currentPaymentForService(service, reference = new Date()) {
+  const cycleStart = iso(serviceCycleStart(service, reference));
+  return app.state.payments.find(payment => payment.serviceId === service.id && payment.cycleStart === cycleStart);
+}
+
+function isPremiumCurrent(restaurantId) {
+  const premium = app.state.services.find(service => service.restaurantId === restaurantId && service.planCode === 'premium' && service.status === 'active');
+  return Boolean(premium && currentPaymentForService(premium)?.status === 'paid');
+}
+
+function serviceMonthlyBase(planCode, _months, restaurantId) {
+  const p = plan(planCode);
+  if (planCode === 'menu') return isPremiumCurrent(restaurantId) ? p.premiumPrice : p.price;
+  return p.price;
+}
+
+function quotaKeysForService(service) {
+  if (service.planCode === 'menu') return ['menu_update'];
+  const keys = [...BASE_QUOTA_TYPES];
+  if (Number(plan(service.planCode).quotas.external_incident || 0) > 0) keys.push('external_incident');
+  return keys;
+}
+
+function quotaTypeForTask(task) {
+  if (task.type === 'section') return 'medium';
+  if (task.type === 'incidents') return 'external_incident';
+  return task.type;
+}
+
+function cycleCreditLimit(service, type, reference = new Date()) {
+  const p = plan(service.planCode);
+  const base = Number(p.quotas[type] || 0);
+  const cycleStart = iso(serviceCycleStart(service, reference));
+  const extras = (service.extraCredits || [])
+    .filter(extra => extra.status === 'paid' && extra.type === type && extra.cycleStart === cycleStart)
+    .reduce((sum, extra) => sum + Number(extra.quantity || 0), 0);
+  return base + extras;
 }
 
 function quotaUsage(service, reference = new Date()) {
-  const p = plan(service.planCode);
   const start = serviceCycleStart(service, reference);
   const end = serviceCycleEnd(service, reference);
   const usage = {};
-  Object.keys(p.quotas).forEach(key => {
-    usage[key] = { used: 0, limit: Number(p.quotas[key] || 0) };
+  quotaKeysForService(service).forEach(type => {
+    usage[type] = { used: 0, limit: cycleCreditLimit(service, type, reference) };
   });
   app.state.tasks
-    .filter(task => task.serviceId === service.id && task.status === 'completed' && task.completedAt)
+    .filter(task => task.serviceId === service.id && task.status === 'completed' && task.completedAt && task.consumesQuota !== false)
     .filter(task => {
       const completed = new Date(task.completedAt);
       return completed >= start && completed <= addDays(end, 1);
     })
     .forEach(task => {
-      if (!usage[task.type]) usage[task.type] = { used: 0, limit: 0 };
-      usage[task.type].used += Number(task.quantity || 1);
+      const type = quotaTypeForTask(task);
+      if (!usage[type]) return;
+      usage[type].used += Number(task.quantity || 1);
     });
+
+  if (usage.external_incident) {
+    usage.external_incident.used = app.state.tasks.filter(task => {
+      if (task.serviceId !== service.id || quotaTypeForTask(task) !== 'external_incident') return false;
+      if (task.status === 'cancelled') return false;
+      const date = new Date(task.reservedAt || task.startedAt || task.completedAt || 0);
+      return date >= start && date <= addDays(end, 1) && Boolean(task.reservedAt || task.startedAt || task.completedAt);
+    }).reduce((sum, task) => sum + Number(task.quantity || 1), 0);
+  }
   return usage;
 }
 
 function quotaTotals(service) {
   const usage = quotaUsage(service);
-  const keys = Object.keys(usage);
+  const keys = Object.keys(usage).filter(key => key !== 'external_incident');
   const totalLimit = keys.reduce((sum, key) => sum + Number(usage[key].limit || 0), 0);
   const totalUsed = keys.reduce((sum, key) => sum + Number(usage[key].used || 0), 0);
   return { used: totalUsed, limit: totalLimit, percent: totalLimit ? Math.round((totalUsed / totalLimit) * 100) : 0 };
-}
-
-function serviceMonthlyBase(planCode, months, restaurantId) {
-  const p = plan(planCode);
-  if (planCode === 'menu') {
-    const hasPremium = app.state.services.some(service =>
-      service.restaurantId === restaurantId &&
-      service.planCode === 'premium' &&
-      service.status !== 'cancelled'
-    );
-    return hasPremium ? p.premiumPrice : p.price;
-  }
-  return p.prices[months] || p.prices[1] || p.price;
 }
 
 function paymentAmounts(base) {
@@ -630,62 +720,169 @@ function round(value) {
 }
 
 function paymentStatusForDate(dueDate, existingStatus) {
-  if (existingStatus === 'paid') return 'paid';
+  if (existingStatus === 'paid' || existingStatus === 'cancelled') return existingStatus;
   const due = parseDate(dueDate);
-  const now = new Date();
-  const today = parseDate(iso(now));
-  if (due >= today) return 'pending';
-  const suspension = addWorkingDays(due, Number(app.state.settings.paymentGraceDays || 3), app.state.settings);
-  suspension.setHours(Number(app.state.settings.paymentGraceHours || 12), 0, 0, 0);
-  return now > suspension ? 'suspended' : 'late';
+  const today = parseDate(iso());
+  if (today <= due) return 'pending';
+  return daysBetween(due, today) > 3 ? 'cancelled' : 'late';
+}
+
+function applyPendingPlanChange(service) {
+  const pending = service.pendingPlanChange;
+  if (!pending || parseDate(pending.effectiveAt) > parseDate(iso())) return;
+  service.planCode = pending.planCode;
+  service.monthlyBase = Number(pending.monthlyBase || serviceMonthlyBase(pending.planCode, 1, service.restaurantId));
+  service.initialCommitmentMonths = 3;
+  service.commitmentStartDate = pending.effectiveAt;
+  service.pendingPlanChange = null;
+}
+
+function advanceServiceCycle(service, reference = new Date()) {
+  initializeServiceCycle(service, reference);
+  if (isServicePaused(service) || service.status === 'cancelled') return;
+  const today = parseDate(iso(reference));
+  while (today > parseDate(service.cycleEndDate)) {
+    if (service.cancelAtEnd && parseDate(service.cancelEffectiveAt || serviceNextPaymentDate(service)) <= serviceNextPaymentDate(service)) {
+      service.status = 'cancelled';
+      service.cancelledAt ||= nowIso();
+      service.cancelReason ||= 'cancelacion_programada';
+      return;
+    }
+    service.cycleStartDate = iso(addDays(parseDate(service.cycleEndDate), 1));
+    service.cycleEndDate = iso(addDays(addMonths(parseDate(service.cycleStartDate), 1), -1));
+    service.cycleIndex = Number(service.cycleIndex || 1) + 1;
+    applyPendingPlanChange(service);
+  }
+}
+
+function createCyclePayment(service) {
+  const cycleStart = iso(serviceCycleStart(service));
+  const cycleEnd = iso(serviceCycleEnd(service));
+  if (service.planCode === 'menu') service.monthlyBase = serviceMonthlyBase('menu', 1, service.restaurantId);
+  const base = Number(service.monthlyBase || serviceMonthlyBase(service.planCode, 1, service.restaurantId));
+  const amounts = paymentAmounts(base);
+  const payment = {
+    id: uid('pay'),
+    restaurantId: service.restaurantId,
+    serviceId: service.id,
+    cycleStart,
+    cycleEnd,
+    dueDate: cycleStart,
+    baseAmount: amounts.base,
+    ivaAmount: amounts.iva,
+    irpfAmount: amounts.irpf,
+    invoiceTotal: amounts.invoiceTotal,
+    receivedAmount: amounts.received,
+    status: 'pending',
+    method: '',
+    notes: '',
+    paidAt: '',
+    sentToFiometra: false,
+    kind: 'subscription',
+  };
+  app.state.payments.push(payment);
+  return payment;
+}
+
+function ensureBackupTask(service) {
+  const every = Number(plan(service.planCode).backupEvery || 0);
+  if (!every || service.status !== 'active' || Number(service.cycleIndex || 1) % every !== 0) return;
+  const cycleStart = iso(serviceCycleStart(service));
+  const existing = app.state.tasks.some(task => task.serviceId === service.id && task.type === 'backup' && task.autoKey === `backup-${cycleStart}`);
+  if (existing) return;
+  app.state.tasks.push({
+    id: uid('task'),
+    restaurantId: service.restaurantId,
+    serviceId: service.id,
+    title: 'Realizar copia de seguridad',
+    description: `Copia programada del ciclo iniciado el ${formatDate(cycleStart, { short: true })}.`,
+    type: 'backup',
+    quantity: 1,
+    consumesQuota: false,
+    status: 'requested',
+    priority: 'normal',
+    assignedTo: service.assignedTo,
+    requestedAt: nowIso(),
+    startedAt: '',
+    completedAt: '',
+    createdBy: app.state.currentUserId,
+    autoKey: `backup-${cycleStart}`,
+  });
 }
 
 function refreshBilling() {
   const services = app.state.services.filter(service => service.status !== 'cancelled');
   services.forEach(service => {
+    initializeServiceCycle(service);
+    if (isServicePaused(service)) return;
+    advanceServiceCycle(service);
+    if (service.status === 'cancelled') return;
     const cycleStart = iso(serviceCycleStart(service));
     const cycleEnd = iso(serviceCycleEnd(service));
-    let payment = app.state.payments.find(item => item.serviceId === service.id && item.cycleStart === cycleStart);
-    const amounts = paymentAmounts(Number(service.monthlyBase || serviceMonthlyBase(service.planCode, service.commitmentMonths, service.restaurantId)));
-    if (!payment) {
-      payment = {
-        id: uid('pay'),
-        restaurantId: service.restaurantId,
-        serviceId: service.id,
-        cycleStart,
-        cycleEnd,
-        dueDate: cycleStart,
-        baseAmount: amounts.base,
-        ivaAmount: amounts.iva,
-        irpfAmount: amounts.irpf,
-        invoiceTotal: amounts.invoiceTotal,
-        receivedAmount: amounts.received,
-        status: 'pending',
-        method: '',
-        notes: '',
-        paidAt: '',
-        sentToFiometra: false,
-      };
-      app.state.payments.push(payment);
-    } else if (payment.status !== 'paid') {
-      Object.assign(payment, {
-        cycleEnd,
-        baseAmount: amounts.base,
-        ivaAmount: amounts.iva,
-        irpfAmount: amounts.irpf,
-        invoiceTotal: amounts.invoiceTotal,
-        receivedAmount: amounts.received,
-      });
+    let payment = app.state.payments.find(item => item.serviceId === service.id && item.cycleStart === cycleStart && (!item.kind || item.kind === 'subscription'));
+    if (!payment) payment = createCyclePayment(service);
+    if (payment.status !== 'paid') {
+      const base = Number(service.monthlyBase || serviceMonthlyBase(service.planCode, 1, service.restaurantId));
+      const amounts = paymentAmounts(base);
+      Object.assign(payment, { cycleEnd, baseAmount: amounts.base, ivaAmount: amounts.iva, irpfAmount: amounts.irpf, invoiceTotal: amounts.invoiceTotal, receivedAmount: amounts.received });
     }
     payment.status = paymentStatusForDate(payment.dueDate, payment.status);
-    if (payment.status === 'suspended') service.status = 'suspended';
-    else if (payment.status === 'late') service.status = 'late';
-    else if (service.status !== 'cancelled') service.status = 'active';
+    if (payment.status === 'paid') service.status = 'active';
+    if (payment.status === 'late') service.status = 'suspended';
+    if (payment.status === 'cancelled') {
+      service.status = 'cancelled';
+      service.cancelledAt ||= nowIso();
+      service.cancelReason ||= 'impago';
+      app.state.reminders.push({ id: uid('rem'), type: 'auto_cancellation', serviceId: service.id, createdAt: nowIso(), notes: 'Cancelado automaticamente tras 3 dias naturales de impago.' });
+    }
+    if (payment.status === 'paid') ensureBackupTask(service);
+  });
+  app.state.services.filter(service => service.planCode === 'menu' && service.status !== 'cancelled' && !isServicePaused(service)).forEach(service => {
+    const payment = currentPaymentForService(service);
+    if (!payment || payment.status === 'paid') return;
+    const base = serviceMonthlyBase('menu', 1, service.restaurantId);
+    service.monthlyBase = base;
+    const amounts = paymentAmounts(base);
+    Object.assign(payment, { baseAmount: amounts.base, ivaAmount: amounts.iva, irpfAmount: amounts.irpf, invoiceTotal: amounts.invoiceTotal, receivedAmount: amounts.received });
   });
 }
 
 function seedState() {
   const today = iso(new Date());
+  return {
+    version: 5,
+    currentUserId: 'user_owner',
+    ownerUserId: '',
+    settings: {
+      workspaceName: 'Cuotly · Restaurantes',
+      timezone: 'Europe/Madrid',
+      ivaRate: 21,
+      irpfRate: 15,
+      cancelNoticeDays: 3,
+      autoCancelDays: 3,
+      workdays: [1, 2, 3, 4, 5, 6],
+      holidays: [
+        { id: 'hol_1', date: '2026-01-01', name: 'Año Nuevo' },
+        { id: 'hol_2', date: '2026-01-06', name: 'Reyes' },
+        { id: 'hol_3', date: '2026-05-01', name: 'Fiesta del Trabajo' },
+        { id: 'hol_4', date: '2026-05-02', name: 'Comunidad de Madrid' },
+        { id: 'hol_5', date: '2026-10-12', name: 'Fiesta Nacional' },
+        { id: 'hol_6', date: '2026-12-08', name: 'Inmaculada' },
+        { id: 'hol_7', date: '2026-12-25', name: 'Navidad' },
+      ],
+      defaultReminderDays: 3,
+      autoSuspend: true,
+    },
+    members: [{ id: 'user_owner', name: '', email: '', role: 'owner', active: true, restaurantIds: [] }],
+    restaurants: [],
+    services: [],
+    tasks: [],
+    payments: [],
+    reports: [],
+    reminders: [],
+  };
+
+  // Legacy demo data retained below only for source-history compatibility.
   return {
     version: 3,
     currentUserId: 'user_owner',
@@ -754,8 +951,8 @@ function seedState() {
 
 function normalizeState(state) {
   const seeded = seedState();
-  state.version = 3;
-  state.settings ||= seeded.settings;
+  state.version = 5;
+  state.settings = { ...seeded.settings, ...(state.settings || {}) };
   state.members ||= [];
   state.restaurants ||= [];
   state.services ||= [];
@@ -763,6 +960,22 @@ function normalizeState(state) {
   state.payments ||= [];
   state.reports ||= [];
   state.reminders ||= [];
+  state.services.forEach(service => {
+    service.initialCommitmentMonths = Number(service.initialCommitmentMonths || 3);
+    service.commitmentStartDate ||= service.startDate || iso();
+    service.extraCredits ||= [];
+    service.pauseHistory ||= [];
+    service.cancelAtEnd = Boolean(service.cancelAtEnd);
+    if (service.planCode === 'menu') service.pauseAllowed = false;
+    if (service.status === 'late') service.status = 'suspended';
+    initializeServiceCycle(service);
+  });
+  state.tasks.forEach(task => {
+    if (task.type === 'section') task.type = 'medium';
+    if (task.type === 'calls') task.type = 'incident';
+    if (task.type === 'incidents') task.type = 'external_incident';
+    if (task.consumesQuota === undefined) task.consumesQuota = ['small', 'medium', 'large', 'photos', 'external_incident', 'menu_update'].includes(task.type);
+  });
   state.members.forEach(member => {
     member.restaurantIds = memberRestaurantIds(member);
   });
@@ -867,7 +1080,7 @@ async function loadState() {
   }
   try {
     app.state = JSON.parse(stored);
-    if (app.state.version !== 3) {
+    if (!app.state || typeof app.state !== 'object') {
       app.state = seedState();
       applyAuthUserToState();
       refreshBilling();
@@ -961,7 +1174,8 @@ function getAlerts() {
     const restaurant = restaurantById(service.restaurantId);
     const payment = app.state.payments.find(item => item.serviceId === service.id && item.cycleStart === iso(serviceCycleStart(service)));
     if (payment?.status === 'late') alerts.push({ type: 'payment', tone: 'red', title: `${restaurant.name} tiene un pago retrasado`, text: `${plan(service.planCode).name} · vence desde ${formatDate(payment.dueDate, { short: true, year: false })}` });
-    if (payment?.status === 'suspended') alerts.push({ type: 'payment', tone: 'red', title: `${restaurant.name} esta suspendido`, text: 'Ha pasado el margen de pago configurado.' });
+    if (service.status === 'suspended') alerts.push({ type: 'payment', tone: 'red', title: `${restaurant.name} esta suspendido`, text: 'No se trabaja hasta confirmar el pago pendiente.' });
+    if (service.status === 'cancelled' && service.cancelReason === 'impago') alerts.push({ type: 'payment', tone: 'red', title: `${restaurant.name} fue cancelado por impago`, text: 'Han pasado 3 dias naturales sin pago.' });
     const notice = cancellationNoticeDate(service);
     const today = parseDate(iso());
     if (notice >= today && notice <= addDays(today, 3)) alerts.push({ type: 'renewal', tone: 'amber', title: `Aviso de cancelacion de ${restaurant.name}`, text: `${plan(service.planCode).name} debe avisar antes del ${formatDate(notice, { short: true })}` });
@@ -1069,8 +1283,8 @@ function servicePill(service) {
 }
 
 function statusPill(status) {
-  const className = status === 'active' ? 'active' : status === 'late' ? 'late' : status === 'suspended' ? 'late' : status === 'paid' ? 'active' : status === 'ready' ? 'ready' : 'pending';
-  const labels = { active: 'Activo', late: 'Retrasado', suspended: 'Suspendido', cancelled: 'Cancelado', pending: 'Sin pagar', paid: 'Pagado', ready: 'Listo' };
+  const className = status === 'active' ? 'active' : status === 'paused' ? 'ready' : status === 'late' ? 'late' : status === 'suspended' ? 'late' : status === 'paid' ? 'active' : status === 'ready' ? 'ready' : 'pending';
+  const labels = { active: 'Activo', paused: 'Pausado', late: 'Retrasado', suspended: 'Suspendido', cancelled: 'Cancelado', pending: 'Sin pagar', paid: 'Pagado', ready: 'Listo' };
   return `<i class="status-pill ${className}">${labels[status] || esc(status)}</i>`;
 }
 
@@ -1180,16 +1394,16 @@ function serviceCard(service) {
       <div class="service-contract">
         <span><small>Precio base</small><strong>${euro(service.monthlyBase)} <i>+ IVA</i></strong></span>
         <span><small>Cobro neto</small><strong>${euro(amounts.received)} <i>IVA ${app.state.settings.ivaRate}% · IRPF ${app.state.settings.irpfRate}%</i></strong></span>
-        <span><small>Compromiso</small><strong>${service.commitmentMonths} mes${service.commitmentMonths > 1 ? 'es' : ''} <i>${service.autoRenew ? 'renueva igual' : 'sin renovacion'}</i></strong></span>
+        <span><small>Compromiso</small><strong>3 meses iniciales <i>despues, renovacion mensual</i></strong></span>
         <span><small>Responsable</small>${assignedLabel(service.assignedTo)}</span>
       </div>
-      <div class="quota-heading"><h4>Cuotas del ciclo actual</h4><span>${formatDate(serviceCycleStart(service), { short: true })} - ${formatDate(serviceCycleEnd(service), { short: true })}</span></div>
+      <div class="quota-heading"><h4>${service.planCode === 'menu' ? 'Actualizaciones del ciclo' : 'Cuotas del ciclo actual'}</h4><span>${isServicePaused(service) ? 'Ciclo congelado' : `${formatDate(serviceCycleStart(service), { short: true })} - ${formatDate(serviceCycleEnd(service), { short: true })}`}</span></div>
       <div class="quota-grid">
         ${Object.entries(usage).map(([key, item]) => quotaItem(key, item)).join('')}
       </div>
       <div class="service-actions">
-        <button class="small-button" data-action="open-task-modal" data-restaurant="${service.restaurantId}" data-service="${service.id}">Registrar cambio</button>
-        ${canManage() ? `<button class="small-button" data-action="open-service-modal" data-id="${service.id}">Editar servicio</button><button class="small-button" data-action="open-plan-change-modal" data-id="${service.id}">Cambiar plan</button><button class="small-button danger-text" data-action="cancel-service" data-id="${service.id}">Cancelar</button>` : ''}
+        <button class="small-button" data-action="open-task-modal" data-restaurant="${service.restaurantId}" data-service="${service.id}" ${service.status !== 'active' ? 'disabled title="El servicio no esta activo"' : ''}>Registrar cambio</button>
+        ${canManage() ? `<button class="small-button" data-action="open-extra-credit-modal" data-id="${service.id}">Añadir credito</button><button class="small-button" data-action="open-service-modal" data-id="${service.id}">Editar servicio</button>${service.planCode !== 'menu' ? `<button class="small-button" data-action="open-plan-change-modal" data-id="${service.id}">Cambiar plan</button>` : ''}${service.planCode !== 'menu' ? `<button class="small-button" data-action="${isServicePaused(service) ? 'resume-service' : 'open-pause-modal'}" data-id="${service.id}">${isServicePaused(service) ? 'Reanudar' : 'Pausar'}</button>` : ''}<button class="small-button danger-text" data-action="cancel-service" data-id="${service.id}">Cancelar</button>` : ''}
       </div>
       <div class="service-note">Uso total: ${totals.used}/${totals.limit} (${totals.percent}%). ${restaurant ? esc(restaurant.name) : ''}</div>
     </section>
@@ -1200,7 +1414,7 @@ function quotaItem(key, item) {
   const percent = item.limit ? Math.min(100, Math.round((item.used / item.limit) * 100)) : 0;
   return `
     <article class="quota-item">
-      <div class="quota-number"><strong>${item.limit - item.used}</strong><span>de ${item.limit}</span></div>
+      <div class="quota-number"><strong>${item.used}/${item.limit}</strong><span>${item.limit ? `${Math.max(0, item.limit - item.used)} restantes` : 'Sin cuota incluida'}</span></div>
       <p>${esc(taskTypeLabel(key))}</p>
       <span class="quota-bar ${percent >= 100 ? 'full' : ''}"><i style="width:${percent}%"></i></span>
       <small>${item.used} usados</small>
@@ -1210,13 +1424,13 @@ function quotaItem(key, item) {
 
 function renewalPanel(service) {
   if (!service) return `<section class="panel no-shadow next-renewal"><p class="eyebrow">RENOVACION</p><p>Sin servicio activo.</p></section>`;
-  const end = serviceCycleEnd(service);
+  const end = serviceNextPaymentDate(service);
   const notice = cancellationNoticeDate(service);
   return `
     <section class="panel no-shadow next-renewal">
       <p class="eyebrow">PROXIMA RENOVACION</p>
       <div class="date-block"><strong>${String(end.getDate()).padStart(2, '0')}</strong><span>${new Intl.DateTimeFormat('es-ES', { month: 'short' }).format(end).toUpperCase()}<br>${end.getFullYear()}</span></div>
-      <p>${service.autoRenew ? `Renueva automaticamente por ${service.commitmentMonths} mes${service.commitmentMonths > 1 ? 'es' : ''}.` : 'No renovara automaticamente.'}</p>
+      <p>${isServicePaused(service) ? 'Servicio pausado: se conserva el tiempo y las cuotas restantes.' : service.cancelAtEnd ? 'Cancelacion programada al terminar este ciclo.' : 'Renueva automaticamente cada mes.'}</p>
       <div class="renewal-warning">Avisar antes del ${formatDate(notice, { short: true })} para cancelar.</div>
       <button class="secondary-button full-width" data-action="open-service-modal" data-id="${service.id}">Gestionar renovacion</button>
     </section>
@@ -1236,12 +1450,23 @@ function teamPanel(services) {
 }
 
 function reportPanel(restaurant) {
+  const hasBasePlan = app.state.services.some(service => service.restaurantId === restaurant.id && BASE_PLAN_CODES.includes(service.planCode));
+  if (!hasBasePlan) return `
+    <section class="panel no-shadow">
+      <div class="panel-heading"><h3>Informe mensual</h3></div>
+      <p class="settings-copy">Menu Diario no incluye informe mensual.</p>
+    </section>
+  `;
   const report = app.state.reports.filter(item => item.restaurantId === restaurant.id).sort((a, b) => b.month.localeCompare(a.month))[0];
   return `
     <section class="panel no-shadow">
       <div class="panel-heading"><h3>Informe mensual</h3>${report ? statusPill(report.status) : '<span></span>'}</div>
       <div class="report-preview"><span>PDF</span><div><strong>${report ? `Informe ${report.month}` : 'Sin informe'}</strong><small>${report ? `Generado ${formatDateTime(report.generatedAt)}` : 'Genera el primer informe mensual'}</small></div></div>
-      <button class="primary-button full-width" data-action="${report ? 'download-report' : 'generate-report'}" data-id="${report?.id || restaurant.id}">${report ? '↓ Descargar informe' : 'Generar informe'}</button>
+      ${report
+        ? `<button class="primary-button full-width" data-action="download-report" data-id="${report.id}">↓ Descargar informe</button>`
+        : canManage()
+          ? `<button class="primary-button full-width" data-action="generate-report" data-id="${restaurant.id}">Generar informe</button>`
+          : '<p class="muted-note">El propietario o un administrador puede generar el informe cuando termine el ciclo.</p>'}
     </section>
   `;
 }
@@ -1249,10 +1474,17 @@ function reportPanel(restaurant) {
 function restaurantTasksTab(restaurant, services) {
   const serviceIds = new Set(services.map(service => service.id));
   const tasks = app.state.tasks.filter(task => serviceIds.has(task.serviceId)).sort((a, b) => new Date(b.requestedAt) - new Date(a.requestedAt));
+  const columns = [
+    ['requested', 'Solicitados'],
+    ['assigned', 'Asignados'],
+    ['in_progress', 'En proceso'],
+    ['waiting', 'Esperando cliente'],
+    ['completed', 'Completados'],
+  ];
   return `
     <section class="panel no-shadow recent-work">
       <div class="panel-heading"><div><p class="eyebrow">ACTIVIDAD</p><h3>Trabajos de ${esc(restaurant.name)}</h3></div><button class="primary-button" data-action="open-task-modal" data-restaurant="${restaurant.id}">＋ Registrar cambio</button></div>
-      <div class="timeline">${tasks.map(timelineRow).join('') || emptyState('✓', 'Sin trabajos', 'Todavia no hay cambios registrados.')}</div>
+      <div class="kanban restaurant-kanban">${columns.map(([status, label]) => taskColumn(status, label, tasks.filter(task => task.status === status))).join('')}</div>
     </section>
   `;
 }
@@ -1265,13 +1497,15 @@ function restaurantMonthsTab(restaurant) {
 function monthCard(restaurant, month) {
   const tasks = app.state.tasks.filter(task => task.restaurantId === restaurant.id && (task.completedAt || task.requestedAt || '').startsWith(month));
   const completed = tasks.filter(task => task.status === 'completed').length;
-  const incidents = tasks.filter(task => task.type === 'incidents').length;
+  const incidents = tasks.filter(task => quotaTypeForTask(task) === 'external_incident' || task.type === 'incident').length;
   return `
     <article>
       <span>${month}</span>
       <h3>${tasks.length} trabajos</h3>
       <p>${completed} completados · ${incidents} incidencias</p>
-      <button data-action="generate-report" data-id="${restaurant.id}" data-month="${month}">Generar ficha →</button>
+      ${canManage()
+        ? `<button data-action="generate-report" data-id="${restaurant.id}" data-month="${month}">Generar ficha →</button>`
+        : '<small>Ficha disponible cuando la genere un administrador.</small>'}
     </article>
   `;
 }
@@ -1426,7 +1660,7 @@ function renderPayments() {
   $('#view-pagos').innerHTML = `
     <div class="page-heading compact"><div><p class="eyebrow">SEGUIMIENTO MANUAL</p><h1>Pagos</h1><p>Cada pago calcula base, IVA, IRPF y neto recibido.</p></div><button class="secondary-button" data-action="export-payments">↓ Exportar listado</button></div>
     <div class="payment-summary"><article><small>Previsto este mes</small><h2>${euro(planned)}</h2><span>Neto recibido</span></article><article><small>Cobrado</small><h2>${euro(paid)}</h2><span>${Math.round((paid / Math.max(planned, 1)) * 100)}%</span></article><article class="payment-alert"><small>Pendiente o retrasado</small><h2>${euro(pending)}</h2><span>${monthPayments.filter(p => p.status !== 'paid').length} pagos</span></article></div>
-    <section class="panel payment-panel"><div class="toolbar"><div class="filter-group">${['all','paid','pending','late','suspended'].map(status => `<button class="filter-button ${app.paymentFilter === status ? 'active' : ''}" data-action="payment-filter" data-filter="${status}">${status === 'all' ? 'Todos' : PAYMENT_LABELS[status]}</button>`).join('')}</div><button class="select-button">${new Intl.DateTimeFormat('es-ES', { month: 'long', year: 'numeric' }).format(new Date())}</button></div><div class="payment-table table-scroll">${paymentTable(payments)}</div></section>
+    <section class="panel payment-panel"><div class="toolbar"><div class="filter-group">${['all','paid','pending','late','suspended','cancelled'].map(status => `<button class="filter-button ${app.paymentFilter === status ? 'active' : ''}" data-action="payment-filter" data-filter="${status}">${status === 'all' ? 'Todos' : PAYMENT_LABELS[status]}</button>`).join('')}</div><button class="select-button">${new Intl.DateTimeFormat('es-ES', { month: 'long', year: 'numeric' }).format(new Date())}</button></div><div class="payment-table table-scroll">${paymentTable(payments)}</div></section>
   `;
 }
 
@@ -1456,7 +1690,7 @@ function renderReports() {
   if (app.reportFilter !== 'all') reports = reports.filter(report => report.restaurantId === app.reportFilter);
   reports = reports.sort((a, b) => b.month.localeCompare(a.month));
   $('#view-informes').innerHTML = `
-    <div class="page-heading compact"><div><p class="eyebrow">DOCUMENTACION</p><h1>Informes mensuales</h1><p>Historial de servicio descargable en PDF por restaurante.</p></div><button class="primary-button" data-action="open-report-modal">＋ Generar informe</button></div>
+    <div class="page-heading compact"><div><p class="eyebrow">DOCUMENTACION</p><h1>Informes mensuales</h1><p>Historial de servicio descargable en PDF por restaurante.</p></div>${canManage() ? '<button class="primary-button" data-action="open-report-modal">＋ Generar informe</button>' : ''}</div>
     <div class="toolbar"><div class="filter-group"><button class="filter-button ${app.reportFilter === 'all' ? 'active' : ''}" data-action="report-filter" data-filter="all">Todos</button>${restaurants.map(restaurant => `<button class="filter-button ${app.reportFilter === restaurant.id ? 'active' : ''}" data-action="report-filter" data-filter="${restaurant.id}">${esc(restaurant.name)}</button>`).join('')}</div></div>
     <div class="report-grid">${reports.map(reportCard).join('') || emptyState('PDF', 'Sin informes', 'Genera un informe mensual cuando termine el ciclo.')}</div>
   `;
@@ -1519,7 +1753,7 @@ function planCard(p) {
       <h2>${esc(p.name)}</h2>
       <div class="plan-price"><strong>${euro(p.price)}</strong><span>/ mes + IVA</span></div>
       <ul>${p.includes.map(item => `<li>${esc(item)}</li>`).join('')}</ul>
-      <div class="price-matrix">${Object.entries(p.prices).map(([months, price]) => `<span><b>${months}m</b>${euro(price)}/mes</span>`).join('')}${p.code === 'menu' ? `<span><b>Premium</b>${euro(p.premiumPrice)}/mes</span>` : ''}</div>
+      <div class="price-matrix"><span><b>Facturacion</b>Mensual · permanencia inicial de 3 meses</span>${p.code === 'menu' ? `<span><b>Con Premium activo</b>${euro(p.premiumPrice)}/mes</span>` : ''}</div>
       <button class="secondary-button full-width" data-action="open-service-modal" data-plan="${p.code}">Asignar plan</button>
     </article>
   `;
@@ -1558,10 +1792,9 @@ function settingsTabContent() {
     return `
       <h2>Notificaciones y avisos</h2>
       <form id="settingsNotificationsForm">
-        <label>Dias laborables para cancelar<input name="cancelNoticeWorkdays" type="number" min="1" value="${s.cancelNoticeWorkdays}"></label>
-        <label>Margen de pago<div class="inline-fields"><input name="paymentGraceDays" type="number" min="0" value="${s.paymentGraceDays}"><span>dias laborables +</span><input name="paymentGraceHours" type="number" min="0" value="${s.paymentGraceHours}"><span>horas</span></div></label>
-        <label class="toggle-row"><span><strong>Suspension automatica</strong><small>Suspender cuando termine el margen adicional</small></span><input name="autoSuspend" type="checkbox" ${s.autoSuspend ? 'checked' : ''}></label>
-        <button class="primary-button">Guardar avisos</button>
+        <label>Cancelacion<input value="3 dias naturales antes del siguiente cobro" disabled></label>
+        <label>Pago vencido<input value="Suspension al finalizar el dia de vencimiento" disabled></label>
+        <label class="toggle-row"><span><strong>Cancelacion automatica por impago</strong><small>Tras 3 dias naturales sin pago, el servicio se cancela y se bloquea el trabajo.</small></span><input name="autoSuspend" type="checkbox" checked disabled></label>
       </form>
     `;
   }
@@ -1643,20 +1876,69 @@ function openServiceModal(id, defaults = {}) {
   const isEdit = Boolean(service.id);
   const restaurantId = service.restaurantId || defaults.restaurantId || app.selectedRestaurantId || app.state.restaurants[0]?.id || '';
   const planCode = service.planCode || defaults.planCode || 'impulso';
-  const months = Number(service.commitmentMonths || (planCode === 'menu' ? 1 : 6));
   const restaurantOptions = visibleRestaurants();
+  const selectablePlans = Object.values(PLAN_CATALOG).filter(p => {
+    if (isEdit) return p.code === service.planCode;
+    if (p.code === 'menu') return !app.state.services.some(item => item.restaurantId === restaurantId && item.planCode === 'menu' && item.status !== 'cancelled');
+    const active = activeBaseService(restaurantId);
+    return !active || active.planCode === p.code;
+  });
   openModal(modalFrame(isEdit ? 'Editar servicio' : 'Anadir servicio', 'PLAN CONTRATADO', `
     <form id="serviceForm" data-id="${service.id || ''}">
       <div class="form-grid">
         <label class="wide">Restaurante<select name="restaurantId" required>${restaurantOptions.map(item => `<option value="${item.id}" ${item.id === restaurantId ? 'selected' : ''}>${esc(item.name)}</option>`).join('')}</select></label>
-        <label>Servicio<select name="planCode" required>${Object.values(PLAN_CATALOG).map(p => `<option value="${p.code}" ${p.code === planCode ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select></label>
-        <label>Compromiso<select name="commitmentMonths">${[1,3,6,9,12].map(value => `<option value="${value}" ${value === months ? 'selected' : ''}>${value} mes${value > 1 ? 'es' : ''}</option>`).join('')}</select></label>
+        <label>Servicio<select name="planCode" required>${selectablePlans.map(p => `<option value="${p.code}" ${p.code === planCode ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select></label>
+        <label>Condiciones<input value="3 meses iniciales · renovacion mensual" disabled></label>
         <label>Fecha de inicio<input name="startDate" type="date" value="${service.startDate || iso()}"></label>
-        <label>Precio base mensual<input name="monthlyBase" type="number" min="0" step="0.01" value="${service.monthlyBase || serviceMonthlyBase(planCode, months, restaurantId)}"></label>
+        <label>Precio base mensual<input name="monthlyBase" type="number" min="0" step="0.01" value="${service.monthlyBase || serviceMonthlyBase(planCode, 1, restaurantId)}"></label>
         <label>Responsable<select name="assignedTo">${app.state.members.filter(m => m.active).map(member => `<option value="${member.id}" ${member.id === (service.assignedTo || app.state.currentUserId) ? 'selected' : ''}>${esc(member.name)} · ${ROLE_LABELS[member.role]}</option>`).join('')}</select></label>
-        <label class="toggle-row wide"><span><strong>Renovacion automatica</strong><small>Renueva el mismo numero de meses si no se cancela.</small></span><input name="autoRenew" type="checkbox" ${service.autoRenew !== false ? 'checked' : ''}></label>
+        <label class="toggle-row wide"><span><strong>Renovacion automatica mensual</strong><small>El primer cobro debe confirmarse antes de activar el servicio.</small></span><input name="autoRenew" type="checkbox" checked disabled></label>
       </div>
       <div class="modal-actions"><button type="button" class="secondary-button" data-action="close-modal">Cancelar</button><button class="primary-button">${isEdit ? 'Guardar servicio' : 'Crear servicio'}</button></div>
+    </form>
+  `));
+}
+
+function taskTypesForService(service) {
+  if (!service) return TASK_TYPES;
+  if (service.planCode === 'menu') return { menu_update: TASK_TYPES.menu_update, incident: TASK_TYPES.incident };
+  const types = {
+    small: TASK_TYPES.small,
+    medium: TASK_TYPES.medium,
+    large: TASK_TYPES.large,
+    photos: TASK_TYPES.photos,
+    review: TASK_TYPES.review,
+    backup: TASK_TYPES.backup,
+    suggestion: TASK_TYPES.suggestion,
+    incident: TASK_TYPES.incident,
+  };
+  if (service.planCode === 'premium') types.seo = TASK_TYPES.seo;
+  if (Number(plan(service.planCode).quotas.external_incident || 0)) types.external_incident = TASK_TYPES.external_incident;
+  return types;
+}
+
+function extraPackageSummary(service) {
+  const items = (service.extraCredits || []).filter(extra => extra.cycleStart === iso(serviceCycleStart(service)));
+  if (!items.length) return 'Sin creditos adicionales en este ciclo.';
+  return items.map(extra => `${taskTypeLabel(extra.type)}: ${extra.quantity} · ${extra.status === 'paid' ? 'pagado' : 'pendiente'}`).join(' | ');
+}
+
+function openExtraCreditModal(id) {
+  const service = app.state.services.find(item => item.id === id);
+  if (!service || !canManage()) return;
+  const isMenu = service.planCode === 'menu';
+  const available = isMenu ? [['menu_update', 'Publicacion adicional']] : BASE_QUOTA_TYPES.map(type => [type, taskTypeLabel(type)]);
+  openModal(modalFrame(isMenu ? 'Añadir publicacion adicional' : 'Añadir creditos adicionales', 'SERVICIO EXTRA', `
+    <form id="extraCreditForm" data-id="${service.id}">
+      <div class="form-grid">
+        <label>Tipo<select name="type">${available.map(([key, label]) => `<option value="${key}">${esc(label)}</option>`).join('')}</select></label>
+        <label>Cantidad<input name="quantity" type="number" min="1" value="1" required></label>
+        <label>Importe base sin IVA<input name="price" type="number" min="0" step="0.01" value="${isMenu ? '' : '15'}" placeholder="Presupuesto"></label>
+        <label>Estado<select name="status"><option value="pending">Pendiente de pago</option><option value="paid">Aprobado y pagado</option></select></label>
+        <label class="wide">Detalle / presupuesto<textarea name="notes" placeholder="Paquete elegido, aprobacion del cliente o condicion especial..."></textarea></label>
+      </div>
+      <p class="muted-note">${isMenu ? 'La publicacion extra se presupuesta y solo aumenta la cuota cuando la marques como pagada.' : 'Paquetes vigentes: pequeños 1/2/5/10 (15/25/55/95 €), fotos 1/2/5/10/12 (12/22/50/90/105 €), medianos 1/2/3 (50/90/125 €) y grandes 1/2 (140/250 €). El credito se suma solo al confirmar el pago.'}</p>
+      <div class="modal-actions"><button type="button" class="secondary-button" data-action="close-modal">Cancelar</button><button class="primary-button">Guardar credito</button></div>
     </form>
   `));
 }
@@ -1667,17 +1949,27 @@ function openTaskModal(id, defaults = {}) {
   const restaurantId = task.restaurantId || defaults.restaurantId || app.selectedRestaurantId || visibleRestaurants()[0]?.id || '';
   const services = servicesForRestaurant(restaurantId);
   const serviceId = task.serviceId || defaults.serviceId || services[0]?.id || visibleServices()[0]?.id || '';
+  const activeService = app.state.services.find(service => service.id === serviceId);
+  const isMenu = activeService?.planCode === 'menu';
+  const types = taskTypesForService(activeService);
   openModal(modalFrame(isEdit ? 'Editar cambio' : 'Nuevo cambio', 'TRABAJO', `
     <form id="taskForm" data-id="${task.id || ''}">
       <div class="form-grid">
         <label class="wide">Restaurante<select name="restaurantId" required>${visibleRestaurants().map(item => `<option value="${item.id}" ${item.id === restaurantId ? 'selected' : ''}>${esc(item.name)}</option>`).join('')}</select></label>
         <label>Servicio<select name="serviceId" required>${visibleServices().filter(service => service.restaurantId === restaurantId || service.id === serviceId).map(service => `<option value="${service.id}" ${service.id === serviceId ? 'selected' : ''}>${esc(plan(service.planCode).name)} · ${esc(restaurantById(service.restaurantId)?.name || '')}</option>`).join('')}</select></label>
-        <label>Tipo de cambio<select name="type">${Object.entries(TASK_TYPES).map(([key, label]) => `<option value="${key}" ${key === (task.type || 'small') ? 'selected' : ''}>${esc(label)}</option>`).join('')}</select></label>
+        <label>Tipo de trabajo<select name="type">${Object.entries(types).map(([key, label]) => `<option value="${key}" ${key === (task.type || (isMenu ? 'menu_update' : 'small')) ? 'selected' : ''}>${esc(label)}</option>`).join('')}</select></label>
         <label>Cantidad<input name="quantity" type="number" min="1" value="${task.quantity || 1}"></label>
         <label>Responsable<select name="assignedTo">${app.state.members.filter(m => m.active).map(member => `<option value="${member.id}" ${member.id === (task.assignedTo || getCurrentUser().id) ? 'selected' : ''}>${esc(member.name)}</option>`).join('')}</select></label>
         <label>Prioridad<select name="priority"><option value="normal" ${task.priority !== 'high' ? 'selected' : ''}>Normal</option><option value="high" ${task.priority === 'high' ? 'selected' : ''}>Urgente</option></select></label>
         <label class="wide">Nombre del cambio<input name="title" required value="${esc(task.title || '')}" placeholder="Ej. Actualizar precios de la carta"></label>
         <label class="wide">Descripcion<textarea name="description" placeholder="Explica que ha solicitado el restaurante...">${esc(task.description || '')}</textarea></label>
+        ${isMenu ? `
+          <label>Fecha del menu<input name="menuDate" type="date" value="${esc(task.menuMeta?.menuDate || iso())}"></label>
+          <label>Informacion recibida<input name="menuReceivedAt" type="datetime-local" value="${esc(task.menuMeta?.receivedAt || '')}"></label>
+          <label>Primera version<input name="menuFirstVersionAt" type="datetime-local" value="${esc(task.menuMeta?.firstVersionAt || '')}"></label>
+          <label>Correcciones<input name="menuCorrectionsAt" type="datetime-local" value="${esc(task.menuMeta?.correctionsAt || '')}"></label>
+          <label class="wide">Publicacion / incidencias<textarea name="menuNotes" placeholder="Hora de publicacion, retraso o aclaracion necesaria...">${esc(task.menuMeta?.notes || '')}</textarea></label>
+        ` : ''}
       </div>
       <div class="modal-actions"><button type="button" class="secondary-button" data-action="close-modal">Cancelar</button><button class="primary-button">${isEdit ? 'Guardar cambio' : 'Crear cambio'}</button></div>
     </form>
@@ -1710,39 +2002,52 @@ function openMemberModal(id) {
 
 function openPlanChangeModal(id) {
   const service = app.state.services.find(item => item.id === id);
-  if (!service) return;
-  openModal(modalFrame('Cambiar plan', 'CAMBIO INMEDIATO', `
+  if (!service || service.planCode === 'menu') return;
+  const currentRank = BASE_PLAN_CODES.indexOf(service.planCode);
+  openModal(modalFrame('Cambiar plan', 'GESTION DE PLAN', `
     <form id="planChangeForm" data-id="${service.id}">
       <div class="form-grid">
-        <label class="wide">Nuevo plan<select name="planCode">${Object.values(PLAN_CATALOG).map(p => `<option value="${p.code}" ${p.code === service.planCode ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select></label>
-        <label>Compromiso<select name="commitmentMonths">${[1,3,6,9,12].map(value => `<option value="${value}" ${value === Number(service.commitmentMonths) ? 'selected' : ''}>${value} mes${value > 1 ? 'es' : ''}</option>`).join('')}</select></label>
-        <label class="wide">Nota<textarea name="notes">Cambio inmediato. Se conserva lo consumido y se calcula la diferencia proporcional.</textarea></label>
+        <label class="wide">Nuevo plan<select name="planCode">${BASE_PLAN_CODES.map(code => `<option value="${code}" ${code === service.planCode ? 'selected' : ''}>${esc(plan(code).name)}</option>`).join('')}</select></label>
+        <label class="wide">Nota<textarea name="notes">Al subir de plan se conserva lo consumido y se cobra la diferencia proporcional. Las bajadas se aplican al proximo ciclo cuando ya no haya permanencia.</textarea></label>
       </div>
-      <div class="change-preview">${planChangePreview(service, service.planCode, service.commitmentMonths)}</div>
+      <div class="change-preview">${planChangePreview(service, service.planCode)}</div>
       <div class="modal-actions"><button type="button" class="secondary-button" data-action="close-modal">Cancelar</button><button class="primary-button">Aplicar cambio</button></div>
     </form>
   `));
 }
 
-function planChangePreview(service, newPlan, newMonths) {
+function planChangePreview(service, newPlan) {
   const today = new Date();
   const cycleStart = serviceCycleStart(service, today);
   const cycleEnd = serviceCycleEnd(service, today);
   const totalDays = Math.max(1, Math.ceil((cycleEnd - cycleStart) / 86400000) + 1);
   const remainingDays = Math.max(0, Math.ceil((cycleEnd - today) / 86400000));
   const oldBase = Number(service.monthlyBase || 0);
-  const newBase = serviceMonthlyBase(newPlan, Number(newMonths || 1), service.restaurantId);
+  const newBase = serviceMonthlyBase(newPlan, 1, service.restaurantId);
   const diff = round((newBase - oldBase) * (remainingDays / totalDays));
-  return `<p><strong>Diferencia proporcional:</strong> ${euro(diff)} base (${remainingDays}/${totalDays} dias restantes del ciclo).</p>`;
+  const newRank = BASE_PLAN_CODES.indexOf(newPlan);
+  const oldRank = BASE_PLAN_CODES.indexOf(service.planCode);
+  if (newRank < oldRank) return `<p><strong>Bajada de plan:</strong> se programara para la siguiente renovacion, solo cuando termine la permanencia inicial. No se pierden los cambios ya consumidos.</p>`;
+  return `<p><strong>Diferencia proporcional:</strong> ${euro(diff)} base (${remainingDays}/${totalDays} dias restantes del ciclo). El nuevo compromiso inicial sera de 3 meses.</p>`;
 }
 
 function openReportModal() {
+  if (!canManage()) {
+    showToast('Solo el propietario o un administrador puede generar informes.');
+    return;
+  }
+  const reportableRestaurants = visibleRestaurants().filter(restaurant => app.state.services.some(service => service.restaurantId === restaurant.id && BASE_PLAN_CODES.includes(service.planCode)));
+  if (!reportableRestaurants.length) {
+    showToast('Anade un plan web al restaurante antes de generar un informe.');
+    return;
+  }
   openModal(modalFrame('Generar informe mensual', 'PDF', `
     <form id="reportForm">
       <div class="form-grid">
-        <label class="wide">Restaurante<select name="restaurantId">${visibleRestaurants().map(item => `<option value="${item.id}">${esc(item.name)}</option>`).join('')}</select></label>
+        <label class="wide">Restaurante<select name="restaurantId">${reportableRestaurants.map(item => `<option value="${item.id}">${esc(item.name)}</option>`).join('')}</select></label>
         <label>Mes<input name="month" type="month" value="${monthKey(new Date())}"></label>
       </div>
+      ${reportableRestaurants.length ? '' : '<p class="muted-note">Menu Diario no genera informe mensual. Añade un plan web al restaurante para crear informes.</p>'}
       <div class="modal-actions"><button type="button" class="secondary-button" data-action="close-modal">Cancelar</button><button class="primary-button">Generar PDF</button></div>
     </form>
   `));
@@ -1777,19 +2082,35 @@ function handleServiceSubmit(form) {
   const data = Object.fromEntries(new FormData(form));
   const id = form.dataset.id || uid('svc');
   const existing = app.state.services.find(item => item.id === id);
-  const months = Number(data.commitmentMonths || 1);
+  const existingBasePlan = !existing && data.planCode !== 'menu' ? activeBaseService(data.restaurantId) : null;
+  if (existingBasePlan && existingBasePlan.id !== id) {
+    showToast('Ese restaurante ya tiene un plan principal. Usa Cambiar plan para sustituirlo.');
+    return;
+  }
+  const duplicateMenu = !existing && data.planCode === 'menu' && app.state.services.some(item => item.restaurantId === data.restaurantId && item.planCode === 'menu' && item.status !== 'cancelled');
+  if (duplicateMenu) {
+    showToast('Ese restaurante ya tiene Menu Diario activo.');
+    return;
+  }
   const payload = {
     id,
     restaurantId: data.restaurantId,
     planCode: data.planCode,
     startDate: data.startDate || iso(),
-    commitmentMonths: data.planCode === 'menu' ? 1 : months,
-    monthlyBase: round(data.monthlyBase || serviceMonthlyBase(data.planCode, months, data.restaurantId)),
-    status: existing?.status || 'active',
-    autoRenew: Boolean(data.autoRenew),
+    commitmentMonths: 3,
+    initialCommitmentMonths: existing?.initialCommitmentMonths || 3,
+    commitmentStartDate: existing?.commitmentStartDate || data.startDate || iso(),
+    monthlyBase: round(data.monthlyBase || serviceMonthlyBase(data.planCode, 1, data.restaurantId)),
+    status: existing?.status || 'pending',
+    autoRenew: true,
     assignedTo: data.assignedTo,
     cancelAtEnd: existing?.cancelAtEnd || false,
     createdAt: existing?.createdAt || iso(),
+    cycleStartDate: existing?.cycleStartDate || data.startDate || iso(),
+    cycleEndDate: existing?.cycleEndDate || iso(addDays(addMonths(parseDate(data.startDate || iso()), 1), -1)),
+    cycleIndex: existing?.cycleIndex || 1,
+    extraCredits: existing?.extraCredits || [],
+    pauseHistory: existing?.pauseHistory || [],
   };
   if (existing) Object.assign(existing, payload);
   else app.state.services.push(payload);
@@ -1805,14 +2126,25 @@ function handleTaskSubmit(form) {
   const id = form.dataset.id || uid('task');
   const existing = app.state.tasks.find(item => item.id === id);
   const service = app.state.services.find(item => item.id === data.serviceId);
+  if (!service) {
+    showToast('Selecciona un servicio valido.');
+    return;
+  }
+  if (!isEdit && service.status !== 'active') {
+    showToast('No puedes registrar trabajos en un servicio pausado, pendiente, suspendido o cancelado.');
+    return;
+  }
+  const type = data.type;
+  const consumesQuota = ['small', 'medium', 'large', 'photos', 'external_incident', 'menu_update'].includes(type);
   const payload = {
     id,
     restaurantId: service?.restaurantId || data.restaurantId,
     serviceId: data.serviceId,
     title: data.title.trim(),
     description: data.description.trim(),
-    type: data.type,
+    type,
     quantity: Number(data.quantity || 1),
+    consumesQuota,
     status: existing?.status || 'requested',
     priority: data.priority,
     assignedTo: data.assignedTo,
@@ -1821,10 +2153,69 @@ function handleTaskSubmit(form) {
     completedAt: existing?.completedAt || '',
     createdBy: existing?.createdBy || app.state.currentUserId,
   };
+  if (service.planCode === 'menu') {
+    const menuDate = data.menuDate || '';
+    const day = menuDate ? parseDate(menuDate).getDay() : 0;
+    if (menuDate && (day === 0 || day === 6)) {
+      showToast('Menu Diario se programa de lunes a viernes. Los fines de semana se presupuestan aparte.');
+      return;
+    }
+    const receivedAt = data.menuReceivedAt || '';
+    const cutoff = menuDate ? new Date(`${iso(addDays(parseDate(menuDate), -1))}T21:00:00`) : null;
+    payload.menuMeta = {
+      menuDate,
+      receivedAt,
+      firstVersionAt: data.menuFirstVersionAt || '',
+      correctionsAt: data.menuCorrectionsAt || '',
+      notes: data.menuNotes?.trim() || '',
+      late: Boolean(cutoff && receivedAt && new Date(receivedAt) > cutoff),
+    };
+  }
   if (existing) Object.assign(existing, payload);
   else app.state.tasks.push(payload);
   closeModal();
   showToast(existing ? 'Cambio actualizado' : 'Cambio registrado');
+  render();
+}
+
+async function handleExtraCreditSubmit(form) {
+  const data = Object.fromEntries(new FormData(form));
+  const service = app.state.services.find(item => item.id === form.dataset.id);
+  if (!service || !canManage()) return;
+  const quantity = Number(data.quantity || 0);
+  if (!quantity) {
+    showToast('Indica una cantidad valida.');
+    return;
+  }
+  service.extraCredits ||= [];
+  const extraCredit = {
+    id: uid('credit'),
+    type: data.type,
+    quantity,
+    price: round(data.price || 0),
+    status: data.status,
+    notes: data.notes?.trim() || '',
+    cycleStart: iso(serviceCycleStart(service)),
+    createdAt: nowIso(),
+    paidAt: '',
+  };
+  service.extraCredits.push(extraCredit);
+  const amounts = paymentAmounts(extraCredit.price);
+  const payment = {
+    id: uid('pay'), restaurantId: service.restaurantId, serviceId: service.id,
+    cycleStart: iso(serviceCycleStart(service)), cycleEnd: iso(serviceCycleEnd(service)), dueDate: iso(),
+    baseAmount: amounts.base, ivaAmount: amounts.iva, irpfAmount: amounts.irpf,
+    invoiceTotal: amounts.invoiceTotal, receivedAmount: amounts.received,
+    status: 'pending', method: '', notes: extraCredit.notes || `Credito adicional: ${taskTypeLabel(extraCredit.type)} x${extraCredit.quantity}.`,
+    paidAt: '', sentToFiometra: false, kind: 'extra_credit', extraCreditId: extraCredit.id,
+  };
+  app.state.payments.push(payment);
+  closeModal();
+  if (data.status === 'paid') {
+    await markPaymentPaid(payment.id);
+    return;
+  }
+  showToast('Credito guardado como pendiente de pago');
   render();
 }
 
@@ -1890,27 +2281,78 @@ function handlePlanChangeSubmit(form) {
   const service = app.state.services.find(item => item.id === form.dataset.id);
   if (!service) return;
   const data = Object.fromEntries(new FormData(form));
+  const newPlan = data.planCode;
+  const oldRank = BASE_PLAN_CODES.indexOf(service.planCode);
+  const newRank = BASE_PLAN_CODES.indexOf(newPlan);
+  if (newPlan === service.planCode) {
+    closeModal();
+    return;
+  }
   const oldBase = Number(service.monthlyBase || 0);
-  const newBase = serviceMonthlyBase(data.planCode, Number(data.commitmentMonths), service.restaurantId);
-  const diff = planChangePreview(service, data.planCode, data.commitmentMonths);
+  const newBase = serviceMonthlyBase(newPlan, 1, service.restaurantId);
+  if (newRank < oldRank) {
+    if (new Date() < commitmentEnd(service)) {
+      showToast('La bajada de plan solo se puede programar despues de la permanencia inicial de 3 meses.');
+      return;
+    }
+    service.pendingPlanChange = {
+      planCode: newPlan,
+      monthlyBase: newBase,
+      effectiveAt: iso(serviceNextPaymentDate(service)),
+      requestedAt: nowIso(),
+      notes: data.notes?.trim() || '',
+    };
+    app.state.reminders.push({ id: uid('rem'), type: 'plan_downgrade', serviceId: service.id, createdAt: nowIso(), notes: `Bajada a ${plan(newPlan).name} programada para el siguiente ciclo.` });
+    closeModal();
+    showToast('Bajada de plan programada para la siguiente renovacion');
+    render();
+    return;
+  }
+  const cycleStart = serviceCycleStart(service);
+  const cycleEnd = serviceCycleEnd(service);
+  const totalDays = Math.max(1, daysBetween(cycleStart, addDays(cycleEnd, 1)));
+  const remainingDays = Math.max(0, daysBetween(new Date(), addDays(cycleEnd, 1)));
+  const difference = round((newBase - oldBase) * (remainingDays / totalDays));
   Object.assign(service, {
-    planCode: data.planCode,
-    commitmentMonths: data.planCode === 'menu' ? 1 : Number(data.commitmentMonths),
+    planCode: newPlan,
     monthlyBase: newBase,
+    initialCommitmentMonths: 3,
+    commitmentStartDate: iso(),
+    pendingPlanChange: null,
   });
-  app.state.reminders.push({ id: uid('rem'), type: 'plan_change', serviceId: service.id, createdAt: nowIso(), notes: `${oldBase} -> ${newBase}. ${diff.replace(/<[^>]+>/g, '')}` });
+  if (difference > 0) {
+    const amounts = paymentAmounts(difference);
+    app.state.payments.push({
+      id: uid('pay'), restaurantId: service.restaurantId, serviceId: service.id,
+      cycleStart: iso(cycleStart), cycleEnd: iso(cycleEnd), dueDate: iso(),
+      baseAmount: amounts.base, ivaAmount: amounts.iva, irpfAmount: amounts.irpf,
+      invoiceTotal: amounts.invoiceTotal, receivedAmount: amounts.received,
+      status: 'pending', method: '', notes: `Diferencia proporcional por subida a ${plan(newPlan).name}.`, paidAt: '', sentToFiometra: false, kind: 'plan_change',
+    });
+  }
+  app.state.reminders.push({ id: uid('rem'), type: 'plan_upgrade', serviceId: service.id, createdAt: nowIso(), notes: `${plan(newPlan).name}. Diferencia proporcional: ${euro(difference)} base.` });
   closeModal();
-  showToast('Plan cambiado y diferencia registrada');
+  showToast(difference > 0 ? 'Plan actualizado y diferencia proporcional creada' : 'Plan actualizado');
   render();
 }
 
 function generateReport(restaurantId, month = monthKey(new Date())) {
+  if (!canManage()) {
+    showToast('Solo el propietario o un administrador puede generar informes.');
+    return null;
+  }
   const restaurant = restaurantById(restaurantId);
-  const serviceIds = app.state.services.filter(service => service.restaurantId === restaurantId).map(service => service.id);
+  const reportServices = app.state.services.filter(service => service.restaurantId === restaurantId && BASE_PLAN_CODES.includes(service.planCode));
+  if (!reportServices.length) {
+    showToast('Menu Diario no incluye informe mensual.');
+    return null;
+  }
+  const serviceIds = reportServices.map(service => service.id);
   const tasks = app.state.tasks.filter(task => serviceIds.includes(task.serviceId) && (task.completedAt || task.requestedAt || '').startsWith(month));
   const completed = tasks.filter(task => task.status === 'completed').length;
-  const incidents = tasks.filter(task => task.type === 'incidents').length;
-  const serviceNames = app.state.services.filter(service => service.restaurantId === restaurantId).map(service => plan(service.planCode).name).join(' + ');
+  const incidents = tasks.filter(task => quotaTypeForTask(task) === 'external_incident' || task.type === 'incident').length;
+  const serviceNames = reportServices.map(service => plan(service.planCode).name).join(' + ');
+  const reportPlan = plan(reportServices[0].planCode);
   let report = app.state.reports.find(item => item.restaurantId === restaurantId && item.month === month);
   if (!report) {
     report = { id: uid('rep'), restaurantId, month, status: 'ready', generatedAt: nowIso(), summary: '' };
@@ -1918,10 +2360,13 @@ function generateReport(restaurantId, month = monthKey(new Date())) {
   }
   report.generatedAt = nowIso();
   report.status = 'ready';
-  report.summary = `${tasks.length} trabajos, ${completed} completados, ${incidents} incidencias, ${serviceNames || 'Sin servicio'}`;
+  report.summary = `${tasks.length} trabajos, ${completed} completados, ${incidents} incidencias, ${serviceNames}`;
   report.data = {
     restaurant: restaurant?.name,
     services: serviceNames,
+    plan: reportPlan.name,
+    sections: reportPlan.report,
+    quotas: reportServices.map(service => ({ name: plan(service.planCode).name, usage: quotaUsage(service, parseDate(`${month}-15`)) })),
     tasks: tasks.map(task => ({ title: task.title, type: taskTypeLabel(task.type), status: STATUS_LABELS[task.status], requestedAt: task.requestedAt, startedAt: task.startedAt, completedAt: task.completedAt, description: task.description })),
   };
   saveState();
@@ -1931,15 +2376,20 @@ function generateReport(restaurantId, month = monthKey(new Date())) {
 
 function downloadReport(reportId) {
   const report = app.state.reports.find(item => item.id === reportId) || generateReport(reportId);
+  if (!report) return;
   const restaurant = restaurantById(report.restaurantId);
-  const serviceIds = app.state.services.filter(service => service.restaurantId === report.restaurantId).map(service => service.id);
+  const reportServices = app.state.services.filter(service => service.restaurantId === report.restaurantId && BASE_PLAN_CODES.includes(service.planCode));
+  const serviceIds = reportServices.map(service => service.id);
   const tasks = app.state.tasks.filter(task => serviceIds.includes(task.serviceId) && (task.completedAt || task.requestedAt || '').startsWith(report.month));
   const lines = [
     `Cuotly - Informe mensual`,
     `Restaurante: ${restaurant?.name || ''}`,
     `Mes: ${report.month}`,
-    `Servicios: ${app.state.services.filter(service => service.restaurantId === report.restaurantId).map(service => plan(service.planCode).name).join(' + ') || 'Sin servicio'}`,
+    `Plan: ${reportServices.map(service => plan(service.planCode).name).join(' + ') || 'Sin servicio'}`,
     `Resumen: ${report.summary}`,
+    '',
+    'Contenido del informe:',
+    ...(report.data?.sections || []).map(section => `- ${section}`),
     '',
     'Trabajos:',
     ...tasks.flatMap(task => [
@@ -1950,7 +2400,7 @@ function downloadReport(reportId) {
     ]),
     '',
     'Cuotas restantes:',
-    ...app.state.services.filter(service => service.restaurantId === report.restaurantId).flatMap(service => {
+    ...reportServices.flatMap(service => {
       const usage = quotaUsage(service, parseDate(`${report.month}-15`));
       return [`${plan(service.planCode).name}:`, ...Object.entries(usage).map(([key, item]) => `  ${taskTypeLabel(key)}: ${Math.max(0, item.limit - item.used)} de ${item.limit}`)];
     }),
@@ -2044,12 +2494,41 @@ function exportRestaurants() {
 function setTaskStatus(id, status) {
   const task = app.state.tasks.find(item => item.id === id);
   if (!task) return;
+  const service = app.state.services.find(item => item.id === task.serviceId);
+  if (!service) return;
+  if (service.status !== 'active' && status !== 'cancelled') {
+    showToast('No se puede trabajar mientras el servicio este pendiente, suspendido, pausado o cancelado.');
+    return;
+  }
+  const quotaType = quotaTypeForTask(task);
+  const usage = quotaUsage(service);
+  const needsReservation = quotaType === 'external_incident' && ['in_progress', 'waiting', 'completed'].includes(status);
+  if (needsReservation && !task.reservedAt) {
+    const item = usage.external_incident;
+    if (!item || item.used + Number(task.quantity || 1) > item.limit) {
+      showToast('No quedan incidencias externas incluidas. Registra este trabajo como presupuesto aparte.');
+      return;
+    }
+    task.reservedAt = nowIso();
+  }
+  if (status === 'completed' && task.consumesQuota && quotaType !== 'external_incident') {
+    const item = usage[quotaType];
+    const wasCompleted = task.status === 'completed';
+    if (!wasCompleted && (!item || item.used + Number(task.quantity || 1) > item.limit)) {
+      showToast('No queda cuota disponible. Añade y confirma un credito adicional antes de completarlo.');
+      return;
+    }
+  }
   task.status = status;
   if (status === 'in_progress' && !task.startedAt) task.startedAt = nowIso();
   if (status === 'waiting' && !task.startedAt) task.startedAt = nowIso();
   if (status === 'completed') {
     if (!task.startedAt) task.startedAt = nowIso();
     task.completedAt = nowIso();
+  }
+  if (status === 'cancelled') {
+    task.cancelledAt = nowIso();
+    task.reservedAt = '';
   }
   showToast(status === 'completed' ? 'Cambio completado y cuota descontada' : 'Estado actualizado');
   render();
@@ -2096,16 +2575,83 @@ function deleteTask(id) {
   render();
 }
 
+function openPauseModal(id) {
+  const service = app.state.services.find(item => item.id === id);
+  if (!service || !canManage() || service.planCode === 'menu') return;
+  if (new Date() < commitmentEnd(service)) {
+    showToast('La pausa ordinaria solo esta disponible despues de los 3 meses iniciales.');
+    return;
+  }
+  openModal(modalFrame('Pausar servicio', 'PAUSA EXCEPCIONAL', `
+    <form id="pauseServiceForm" data-id="${service.id}">
+      <div class="form-grid">
+        <label>Fecha de inicio<input name="pausedAt" type="date" value="${iso()}" required></label>
+        <label>Duracion prevista<input name="plannedDays" type="number" min="1" max="31" value="7" required></label>
+        <label class="wide">Motivo interno<textarea name="notes" placeholder="Motivo de la pausa y confirmacion con el restaurante..."></textarea></label>
+      </div>
+      <p class="muted-note">La pausa congela el tiempo pendiente y todas las cuotas del ciclo. No se crean ni se ejecutan trabajos durante la pausa.</p>
+      <div class="modal-actions"><button type="button" class="secondary-button" data-action="close-modal">Cancelar</button><button class="primary-button">Pausar servicio</button></div>
+    </form>
+  `));
+}
+
+function handlePauseServiceSubmit(form) {
+  const data = Object.fromEntries(new FormData(form));
+  const service = app.state.services.find(item => item.id === form.dataset.id);
+  if (!service || !canManage()) return;
+  const pausedAt = data.pausedAt || iso();
+  service.pausedAt = `${pausedAt}T00:00:00.000Z`;
+  service.status = 'paused';
+  service.pausePlanDays = Math.min(31, Math.max(1, Number(data.plannedDays || 1)));
+  service.pauseNotes = data.notes?.trim() || '';
+  app.state.reminders.push({ id: uid('rem'), type: 'service_paused', serviceId: service.id, createdAt: nowIso(), notes: `Pausa iniciada el ${pausedAt}. ${service.pauseNotes}`.trim() });
+  closeModal();
+  showToast('Servicio pausado y cuotas congeladas');
+  render();
+}
+
+function resumeService(id) {
+  const service = app.state.services.find(item => item.id === id);
+  if (!service || !canManage() || !service.pausedAt) return;
+  const pausedAt = parseDate(service.pausedAt);
+  const days = daysBetween(pausedAt, new Date());
+  service.pauseHistory ||= [];
+  service.pauseHistory.push({ startedAt: iso(pausedAt), endedAt: iso(), days, notes: service.pauseNotes || '' });
+  service.cycleEndDate = iso(addDays(serviceCycleEnd(service), days));
+  service.pausedAt = '';
+  service.pausePlanDays = 0;
+  service.pauseNotes = '';
+  service.status = currentPaymentForService(service)?.status === 'paid' ? 'active' : 'pending';
+  app.state.reminders.push({ id: uid('rem'), type: 'service_resumed', serviceId: service.id, createdAt: nowIso(), notes: `Servicio reanudado tras ${days} dia(s) de pausa.` });
+  showToast('Servicio reanudado; se conserva el tiempo y las cuotas restantes');
+  render();
+}
+
 function cancelService(id) {
   const service = app.state.services.find(item => item.id === id);
   if (!service) return;
-  const remainingMonths = Math.max(0, Math.ceil((commitmentEnd(service) - new Date()) / (1000 * 60 * 60 * 24 * 30)));
+  const nextPayment = serviceNextPaymentDate(service);
+  const notice = cancellationNoticeDate(service);
+  const remainingMonths = Math.max(0, Math.ceil((commitmentEnd(service) - nextPayment) / (1000 * 60 * 60 * 24 * 30)));
   const fee = remainingMonths * Number(service.monthlyBase || 0);
-  if (!confirm(`Cancelar ${plan(service.planCode).name}? Penalizacion aproximada: ${euro(fee)} base + IVA si quedan meses de compromiso.`)) return;
-  service.status = 'cancelled';
-  service.cancelledAt = nowIso();
-  app.state.reminders.push({ id: uid('rem'), type: 'cancellation', serviceId: id, createdAt: nowIso(), notes: `Cancelado. Restante estimado: ${euro(fee)} base.` });
-  showToast('Servicio cancelado');
+  const lateNotice = new Date() > notice;
+  const effective = lateNotice ? addMonths(nextPayment, 1) : nextPayment;
+  if (!confirm(`Programar cancelacion de ${plan(service.planCode).name} para ${formatDate(effective, { short: true })}?${remainingMonths ? ` Quedan aproximadamente ${remainingMonths} mensualidades de permanencia (${euro(fee)} base).` : ''}`)) return;
+  service.cancelAtEnd = true;
+  service.cancelRequestedAt = nowIso();
+  service.cancelEffectiveAt = iso(effective);
+  if (fee > 0 && !app.state.payments.some(payment => payment.serviceId === service.id && payment.kind === 'cancellation_fee' && payment.status !== 'cancelled')) {
+    const amounts = paymentAmounts(fee);
+    app.state.payments.push({
+      id: uid('pay'), restaurantId: service.restaurantId, serviceId: service.id,
+      cycleStart: iso(serviceCycleStart(service)), cycleEnd: iso(serviceCycleEnd(service)), dueDate: iso(effective),
+      baseAmount: amounts.base, ivaAmount: amounts.iva, irpfAmount: amounts.irpf,
+      invoiceTotal: amounts.invoiceTotal, receivedAmount: amounts.received,
+      status: 'pending', method: '', notes: `Liquidacion de permanencia pendiente (${remainingMonths} mensualidad(es)).`, paidAt: '', sentToFiometra: false, kind: 'cancellation_fee',
+    });
+  }
+  app.state.reminders.push({ id: uid('rem'), type: 'cancellation', serviceId: id, createdAt: nowIso(), notes: `Cancelacion programada para ${iso(effective)}.${lateNotice ? ' Aviso fuera de plazo: se mantiene un ciclo adicional.' : ''}${remainingMonths ? ` Permanencia pendiente estimada: ${euro(fee)} base.` : ''}` });
+  showToast('Cancelacion programada al finalizar el ciclo aplicable');
   render();
 }
 
@@ -2147,7 +2693,14 @@ async function markPaymentPaid(id) {
   payment.paidAt = nowIso();
   payment.method ||= 'Transferencia';
   const service = app.state.services.find(item => item.id === payment.serviceId);
-  if (service && service.status !== 'cancelled') service.status = 'active';
+  if (service && payment.kind === 'extra_credit') {
+    const extra = (service.extraCredits || []).find(item => item.id === payment.extraCreditId);
+    if (extra) {
+      extra.status = 'paid';
+      extra.paidAt = nowIso();
+    }
+  }
+  if (service && payment.kind !== 'extra_credit' && service.status !== 'cancelled') service.status = 'active';
   try {
     await sendPaymentToFiometra(payment);
     showToast('Pago recibido y registrado en Fiometra');
@@ -2187,10 +2740,9 @@ function handleSettingsSubmit(form) {
     app.state.settings.irpfRate = Number(data.irpfRate || 15);
   }
   if (form.id === 'settingsNotificationsForm') {
-    app.state.settings.cancelNoticeWorkdays = Number(data.cancelNoticeWorkdays || 3);
-    app.state.settings.paymentGraceDays = Number(data.paymentGraceDays || 3);
-    app.state.settings.paymentGraceHours = Number(data.paymentGraceHours || 12);
-    app.state.settings.autoSuspend = Boolean(data.autoSuspend);
+    app.state.settings.cancelNoticeDays = 3;
+    app.state.settings.autoCancelDays = 3;
+    app.state.settings.autoSuspend = true;
   }
   if (form.id === 'settingsCalendarForm') {
     app.state.settings.workdays = String(data.workdays).split(',').map(Number);
@@ -2239,6 +2791,9 @@ async function handleClick(event) {
   if (action === 'open-restaurant-modal') openRestaurantModal(id);
   if (action === 'open-service-modal') openServiceModal(id, { restaurantId: actionEl.dataset.restaurant, planCode: actionEl.dataset.plan });
   if (action === 'open-task-modal') openTaskModal(id, { restaurantId: actionEl.dataset.restaurant, serviceId: actionEl.dataset.service });
+  if (action === 'open-extra-credit-modal') openExtraCreditModal(id);
+  if (action === 'open-pause-modal') openPauseModal(id);
+  if (action === 'resume-service') resumeService(id);
   if (action === 'open-member-modal') openMemberModal(id);
   if (action === 'open-plan-change-modal') openPlanChangeModal(id);
   if (action === 'open-report-modal') openReportModal();
@@ -2257,7 +2812,7 @@ async function handleClick(event) {
   if (action === 'delete-task') deleteTask(id);
   if (action === 'cancel-service') cancelService(id);
   if (action === 'download-report') downloadReport(id);
-  if (action === 'generate-report') { const report = generateReport(id, actionEl.dataset.month || monthKey(new Date())); downloadReport(report.id); render(); }
+  if (action === 'generate-report') { const report = generateReport(id, actionEl.dataset.month || monthKey(new Date())); if (report) downloadReport(report.id); render(); }
   if (action === 'export-payments') exportPayments();
   if (action === 'export-tasks') exportTasks();
   if (action === 'export-restaurants') exportRestaurants();
@@ -2284,13 +2839,15 @@ function handleSubmit(event) {
   if (form.id === 'restaurantForm') handleRestaurantSubmit(form);
   if (form.id === 'serviceForm') handleServiceSubmit(form);
   if (form.id === 'taskForm') handleTaskSubmit(form);
+  if (form.id === 'extraCreditForm') handleExtraCreditSubmit(form);
+  if (form.id === 'pauseServiceForm') handlePauseServiceSubmit(form);
   if (form.id === 'memberForm') handleMemberSubmit(form);
   if (form.id === 'planChangeForm') handlePlanChangeSubmit(form);
   if (form.id === 'reportForm') {
     const data = Object.fromEntries(new FormData(form));
     const report = generateReport(data.restaurantId, data.month);
     closeModal();
-    downloadReport(report.id);
+    if (report) downloadReport(report.id);
     render();
   }
   if (form.id.startsWith('settings')) handleSettingsSubmit(form);

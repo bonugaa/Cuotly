@@ -9,6 +9,8 @@
 .assignment-box{border:1px solid var(--line);border-radius:7px;background:#fafcfb;padding:13px}.assignment-title{display:grid;gap:4px;margin-bottom:10px}.assignment-title strong{font-size:12px}.assignment-title small,.muted-note{color:var(--muted);font-size:10px;font-weight:500}.check-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.check-card{display:flex!important;align-items:flex-start;gap:9px;border:1px solid #dbe5e1;border-radius:7px;background:#fff;padding:10px!important;margin:0!important}.check-card input{width:16px!important;height:16px!important;margin:2px 0 0!important}.check-card span{display:grid;gap:3px;min-width:0}.check-card strong{font-size:11px}.check-card small{font-size:9px;color:var(--muted);font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .detail-actions .danger-outline,.task-actions .danger-outline{margin-top:0}
 .timeline-row .small-button{margin-top:8px}
+.small-button:disabled{cursor:not-allowed;opacity:.5}
+.restaurant-kanban{padding:0 18px 18px;grid-template-columns:repeat(5,minmax(235px,1fr));min-height:0}
 @media(max-width:650px){.service-actions{padding:0 14px 14px}.service-actions button{flex:1}.wide-inline{grid-template-columns:1fr!important}.row-actions{justify-content:flex-start}.price-matrix{grid-template-columns:1fr}.modal-list{padding:10px 16px}}
 
 .auth-card{width:min(520px,100%);background:#fff;color:var(--ink);border-radius:10px;padding:34px;box-shadow:0 28px 80px rgba(0,0,0,.28)}
