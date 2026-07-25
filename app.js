@@ -348,7 +348,7 @@ function renderWorkspaceGate(message = '') {
       <p>${workspaces.length ? 'Tu cuenta puede pertenecer a varios espacios de Cuotly. Elige donde quieres trabajar.' : 'No tienes acceso a ningun espacio activo. Puedes crear el tuyo desde aqui.'}</p>
       ${workspaces.length ? `<div class="workspace-list">${workspaces.map(space => `<button class="secondary-button workspace-choice" data-action="switch-workspace" data-id="${space.id}"><span><strong>${esc(space.name)}</strong><small>${esc(ROLE_LABELS[space.role] || space.role)}</small></span><b>Entrar</b></button>`).join('')}</div>` : ''}
       <form id="workspaceCreateForm" class="auth-form workspace-create-form">
-        <label>Nombre del nuevo espacio<input name="workspaceName" required placeholder="Ej. Mantenimientos Madrid"></label>
+        <label>Nombre del nuevo espacio<input name="workspaceName" required maxlength="120" placeholder="Ej. Casa Paco o Madrid"></label>
         <button class="primary-button full-width">Crear espacio</button>
       </form>
       <button class="text-button auth-switch" data-action="logout">Cerrar sesion</button>
@@ -359,8 +359,12 @@ function renderWorkspaceGate(message = '') {
 async function createWorkspaceFromForm(form) {
   const token = await getAccessToken();
   if (!token) return;
-  const name = new FormData(form).get('workspaceName')?.trim();
-  if (!name) return;
+  // A workspace can use any non-empty name: one word, one letter, or several words.
+  const name = String(new FormData(form).get('workspaceName') || '').trim().replace(/\s+/g, ' ');
+  if (!name) {
+    renderWorkspaceGate('Escribe un nombre para el espacio.');
+    return;
+  }
   const button = form.querySelector('button');
   button.disabled = true;
   button.textContent = 'Creando...';
@@ -397,6 +401,42 @@ async function switchWorkspace(id) {
   app.workspace.needsSetup = false;
   app.booted = false;
   await startApp();
+}
+
+async function deleteWorkspace(id) {
+  const space = (app.workspace.workspaces || []).find(item => item.id === id);
+  if (!space || space.role !== 'owner') {
+    showToast('Solo el propietario puede eliminar este espacio.');
+    return;
+  }
+  if (!confirm(`Eliminar definitivamente el espacio "${space.name}"? Se borraran sus restaurantes, servicios, trabajos, pagos, informes y miembros. Esta accion no se puede deshacer.`)) return;
+  const token = await getAccessToken();
+  if (!token) return;
+  try {
+    const response = await fetch('/api/shared-state', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+      body: JSON.stringify({ action: 'delete-workspace', workspaceId: id }),
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result.error || 'No se pudo eliminar el espacio.');
+    app.workspace.workspaces = result.workspaces || [];
+    if (id === app.workspace.id) {
+      stopWorkspaceAccessCheck();
+      localStorage.removeItem(workspaceSelectionKey());
+      app.workspace.id = '';
+      app.workspace.name = '';
+      app.workspace.needsSetup = true;
+      app.booted = false;
+      app.state = null;
+      renderWorkspaceGate(app.workspace.workspaces.length ? 'Espacio eliminado. Elige otro espacio para continuar.' : 'Espacio eliminado. Crea un nuevo espacio para continuar.');
+    } else {
+      renderSettings();
+      showToast('Espacio eliminado');
+    }
+  } catch (error) {
+    showToast(error.message || 'No se pudo eliminar el espacio.');
+  }
 }
 
 function stopWorkspaceAccessCheck() {
@@ -2048,8 +2088,8 @@ function settingsTabContent() {
     return `
       <h2>Espacios de trabajo</h2>
       <p class="settings-copy">Puedes usar la misma cuenta en varios espacios de Cuotly. Cada espacio conserva sus restaurantes, planes y equipo por separado.</p>
-      <div class="workspace-list settings-workspaces">${spaces.map(space => `<button class="secondary-button workspace-choice ${space.id === app.workspace.id ? 'active-space' : ''}" data-action="switch-workspace" data-id="${space.id}"><span><strong>${esc(space.name)}</strong><small>${esc(ROLE_LABELS[space.role] || space.role)}</small></span><b>${space.id === app.workspace.id ? 'Actual' : 'Abrir'}</b></button>`).join('')}</div>
-      <form id="workspaceCreateForm" class="settings-danger"><label>Crear otro espacio<input name="workspaceName" required placeholder="Nombre del nuevo espacio"></label><button class="secondary-button">Crear espacio</button></form>
+      <div class="workspace-list settings-workspaces">${spaces.map(space => `<article class="workspace-row ${space.id === app.workspace.id ? 'active-space' : ''}"><button class="secondary-button workspace-choice" data-action="switch-workspace" data-id="${space.id}"><span><strong>${esc(space.name)}</strong><small>${esc(ROLE_LABELS[space.role] || space.role)}</small></span><b>${space.id === app.workspace.id ? 'Actual' : 'Abrir'}</b></button>${space.role === 'owner' ? `<button class="small-button danger-text" data-action="delete-workspace" data-id="${space.id}">Eliminar</button>` : ''}</article>`).join('')}</div>
+      <form id="workspaceCreateForm" class="settings-danger"><label>Crear otro espacio<input name="workspaceName" required maxlength="120" placeholder="El nombre que quieras"></label><button class="secondary-button">Crear espacio</button></form>
       ${isOwner() ? `<div class="settings-danger"><h2>Miembros anteriores</h2><p class="settings-copy">Los expulsados no tienen acceso. Puedes reactivarlos conservando sus asignaciones o eliminarlos definitivamente.</p>${inactive.length ? `<div class="former-members">${inactive.map(member => `<article><div><strong>${esc(member.name)}</strong><small>${esc(member.email)}${member.removedAt ? ` · Expulsado ${formatDateTime(member.removedAt)}` : ''}</small></div><div class="row-actions"><button class="small-button" data-action="restore-member" data-id="${member.id}">Reactivar</button><button class="small-button danger-text" data-action="purge-member" data-id="${member.id}">Eliminar</button></div></article>`).join('')}</div>` : '<p class="muted-note">No hay miembros anteriores.</p>'}</div>` : ''}
     `;
   }
@@ -3273,6 +3313,7 @@ async function handleClick(event) {
   if (action === 'auth-mode') { renderAuthScreen(actionEl.dataset.mode || 'login'); return; }
   if (action === 'auth-google') { handleGoogleLogin(); return; }
   if (action === 'switch-workspace') { await switchWorkspace(id); return; }
+  if (action === 'delete-workspace') { await deleteWorkspace(id); return; }
   if (action === 'show-alerts') showAlertsModal();
   if (action === 'open-restaurant') showView('restaurante-detalle', { restaurantId: id });
   if (action === 'open-restaurant-modal') openRestaurantModal(id);
