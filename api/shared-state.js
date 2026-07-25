@@ -72,7 +72,15 @@ async function getCaller(req) {
   const authorization = req.headers.authorization || '';
   if (!authorization.toLowerCase().startsWith('bearer ')) return null;
   const response = await fetch(`${SUPABASE_URL}/auth/v1/user`, { headers: { apikey: SERVICE_ROLE_KEY, authorization } });
-  return response.ok ? response.json() : null;
+  if (!response.ok) return null;
+  const user = await response.json();
+  try {
+    const payload = JSON.parse(Buffer.from(authorization.split('.')[1]?.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8'));
+    user.aal = payload.aal || 'aal1';
+  } catch {
+    user.aal = 'aal1';
+  }
+  return user;
 }
 
 async function rest(path, options = {}) {
@@ -148,18 +156,7 @@ async function upsertMember(workspaceId, member, userId = undefined) {
   if (!response.ok) throw new Error(await response.text());
 }
 
-async function claimEmailMemberships(caller) {
-  const email = String(caller.email || '').toLowerCase();
-  if (!email) return;
-  await rest(`cuotly_members?email=ilike.${encodeURIComponent(email)}&user_id=is.null&active=is.true&deleted_at=is.null`, {
-    method: 'PATCH',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ user_id: caller.id }),
-  });
-}
-
 async function membershipsForCaller(caller) {
-  await claimEmailMemberships(caller);
   const response = await rest(`cuotly_members?user_id=eq.${encodeURIComponent(caller.id)}&active=is.true&deleted_at=is.null&select=workspace_id,email,name,role,workspace:cuotly_workspaces!inner(id,name,owner_id,state,updated_at)&order=created_at.asc`);
   if (!response.ok) throw new Error(await response.text());
   const rows = await response.json().catch(() => []);
@@ -428,6 +425,7 @@ export default async function handler(req, res) {
   if (!SUPABASE_URL || !SERVICE_ROLE_KEY) return reply(res, 500, { error: 'Faltan SUPABASE_URL o SUPABASE_SERVICE_ROLE_KEY en Vercel.' });
   const caller = await getCaller(req);
   if (!caller?.id) return reply(res, 401, { error: 'AUTH_REQUIRED' });
+  if (caller.aal !== 'aal2') return reply(res, 403, { error: 'MFA_REQUIRED' });
   const body = readBody(req);
 
   if (req.method === 'POST' && body.action === 'create-workspace') {

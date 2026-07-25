@@ -29,7 +29,15 @@ async function getCuotlyCaller(req) {
     },
   });
   if (!response.ok) return null;
-  return response.json();
+  const user = await response.json();
+  const token = authorization.slice(7).split('.')[1];
+  try {
+    const claims = JSON.parse(Buffer.from(token, 'base64url').toString('utf8'));
+    user.aal = claims.aal || '';
+  } catch {
+    user.aal = '';
+  }
+  return user;
 }
 
 async function fiometraRest(table, query = '', options = {}) {
@@ -70,7 +78,7 @@ function paymentDescription(payment, restaurant, service, callerEmail) {
   ].join('\n');
 }
 
-module.exports = async function handler(req, res) {
+export default async function handler(req, res) {
   if (req.method !== 'POST') return jsonResponse(res, 405, { error: 'METHOD_NOT_ALLOWED' });
   if (!CUOTLY_SUPABASE_URL || !CUOTLY_SERVICE_ROLE_KEY) return jsonResponse(res, 500, { error: 'Faltan variables de Cuotly en Vercel.' });
   if (!FIOMETRA_SUPABASE_URL || !FIOMETRA_SERVICE_ROLE_KEY) return jsonResponse(res, 500, { error: 'Faltan FIOMETRA_SUPABASE_URL y FIOMETRA_SUPABASE_SERVICE_ROLE_KEY en Vercel.' });
@@ -78,6 +86,7 @@ module.exports = async function handler(req, res) {
   try {
     const caller = await getCuotlyCaller(req);
     if (!caller?.email) return jsonResponse(res, 401, { error: 'AUTH_REQUIRED' });
+    if (caller.aal !== 'aal2') return jsonResponse(res, 403, { error: 'MFA_REQUIRED' });
 
     const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
     const payment = body.payment || {};
