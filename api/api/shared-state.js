@@ -367,23 +367,44 @@ async function syncMembers(workspaceId, state, caller) {
 async function purgeMember(workspace, membership, body) {
   if (!isOwner(membership)) throw new Error('FORBIDDEN');
   const state = clone(workspace.state || {});
-  const target = (state.members || []).find(member => member.id === body.memberId);
-  if (!target || target.role === 'owner') throw new Error('MEMBER_NOT_FOUND');
+  const requestedEmail = String(body.memberEmail || '').trim().toLowerCase();
+  const target = (state.members || []).find(member => member.id === body.memberId)
+    || (requestedEmail ? (state.members || []).find(member => String(member.email || '').toLowerCase() === requestedEmail) : null);
+  const email = String(target?.email || requestedEmail).trim().toLowerCase();
+  if (!email || target?.role === 'owner') throw new Error('MEMBER_NOT_FOUND');
+
+  // Membership data is the access source of truth, even if a browser just removed
+  // an inactive person from its locally cached workspace state.
+  const currentResponse = await rest(`cuotly_members?workspace_id=eq.${encodeURIComponent(workspace.id)}&email=ilike.${encodeURIComponent(email)}&select=email,name,role`);
+  if (!currentResponse.ok) throw new Error(await currentResponse.text());
+  const currentRows = await currentResponse.json().catch(() => []);
+  const current = currentRows[0] || null;
+  if (current?.role === 'owner') throw new Error('MEMBER_NOT_FOUND');
   const lockUntil = new Date(Date.now() + 20 * 24 * 60 * 60 * 1000).toISOString();
-  const response = await rest(`cuotly_members?workspace_id=eq.${encodeURIComponent(workspace.id)}&email=ilike.${encodeURIComponent(target.email)}`, {
+  const removal = { active: false, user_id: null, name: 'Miembro eliminado', removed_at: new Date().toISOString(), deleted_at: new Date().toISOString(), rejoin_after: lockUntil };
+  const response = await rest(`cuotly_members?workspace_id=eq.${encodeURIComponent(workspace.id)}&email=ilike.${encodeURIComponent(email)}`, {
     method: 'PATCH',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ active: false, user_id: null, name: 'Miembro eliminado', removed_at: new Date().toISOString(), deleted_at: new Date().toISOString(), rejoin_after: lockUntil }),
+    headers: { 'content-type': 'application/json', prefer: 'return=representation' },
+    body: JSON.stringify(removal),
   });
   if (!response.ok) throw new Error(await response.text());
+  const removedRows = await response.json().catch(() => []);
+  if (!removedRows.length && !current) {
+    const createResponse = await rest('cuotly_members?on_conflict=workspace_id,email', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', prefer: 'resolution=merge-duplicates,return=representation' },
+      body: JSON.stringify({ workspace_id: workspace.id, email, role: target?.role === 'admin' ? 'admin' : 'worker', ...removal }),
+    });
+    if (!createResponse.ok) throw new Error(await createResponse.text());
+  }
   state.tasks = (state.tasks || []).map(task => ({
     ...task,
-    assignedName: task.assignedTo === target.id ? (task.assignedName || target.name) : task.assignedName,
-    createdByName: task.createdBy === target.id ? (task.createdByName || target.name) : task.createdByName,
+    assignedName: task.assignedTo === body.memberId ? (task.assignedName || target?.name || body.memberName || current?.name || email) : task.assignedName,
+    createdByName: task.createdBy === body.memberId ? (task.createdByName || target?.name || body.memberName || current?.name || email) : task.createdByName,
   }));
-  state.members = (state.members || []).filter(member => member.id !== target.id);
+  state.members = (state.members || []).filter(member => member.id !== body.memberId && String(member.email || '').toLowerCase() !== email);
   state.services = (state.services || []).map(service => {
-    const assignedMemberIds = serviceMemberIds(service).filter(id => id !== target.id);
+    const assignedMemberIds = serviceMemberIds(service).filter(id => id !== body.memberId);
     return { ...service, assignedMemberIds, assignedTo: assignedMemberIds[0] || '' };
   });
   await upsertWorkspaceState(workspace.id, state);
