@@ -1,4 +1,4 @@
-const CACHE_NAME = 'cuotly-v19-personal-accounts';
+const CACHE_NAME = 'cuotly-v20-profile-save';
 const ASSETS = [
   './',
   './index.html',

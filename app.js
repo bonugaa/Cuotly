@@ -2277,7 +2277,7 @@ function accountTabContent(profile) {
     <form id="accountProfileForm">
       <div class="account-profile-head">${avatarMarkup(profile.fullName, profile.avatarUrl, 'avatar large-avatar avatar-green')}<label class="avatar-upload">Cambiar foto<input name="avatar" type="file" accept="image/png,image/jpeg,image/webp"></label></div>
       <div class="form-grid">
-        <label>Nombre<input name="fullName" maxlength="80" required value="${esc(profile.fullName)}"></label>
+        <label>Nombre<input name="fullName" maxlength="80" value="${esc(profile.fullName)}"></label>
         <label>Email<input value="${esc(getAuthEmail(app.auth.user))}" disabled></label>
         <label>Teléfono<input name="phone" maxlength="40" value="${esc(profile.phone)}" placeholder="Opcional"></label>
         <label>Cargo<input name="jobTitle" maxlength="80" value="${esc(profile.jobTitle)}" placeholder="Ej. Responsable de mantenimiento"></label>
@@ -2319,7 +2319,7 @@ async function handleAccountProfileSubmit(form) {
   button.textContent = 'Guardando...';
   try {
     const avatarUrl = await uploadAccountAvatar(data.get('avatar'));
-    await updateAccountProfile({ full_name: String(data.get('fullName') || '').trim(), phone: data.get('phone'), job_title: data.get('jobTitle'), bio: data.get('bio'), avatar_url: avatarUrl, notification_preferences: accountProfile().notifications });
+    await updateAccountProfile({ full_name: String(data.get('fullName') || '').trim() || accountProfile().fullName || getAuthName(app.auth.user), phone: data.get('phone'), job_title: data.get('jobTitle'), bio: data.get('bio'), avatar_url: avatarUrl, notification_preferences: accountProfile().notifications });
     render();
     showToast('Perfil actualizado');
   } catch (error) {
