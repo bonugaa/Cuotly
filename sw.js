@@ -1,4 +1,4 @@
-const CACHE_NAME = 'cuotly-v18-workspace-controls';
+const CACHE_NAME = 'cuotly-v19-personal-accounts';
 const ASSETS = [
   './',
   './index.html',

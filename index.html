@@ -5,11 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#153f3a">
   <title>Cuotly | Mantenimiento de restaurantes</title>
-  <link rel="manifest" href="manifest.webmanifest?v=20260725-member-purge">
+  <link rel="manifest" href="manifest.webmanifest?v=20260725-accounts">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=20260725-member-purge">
+  <link rel="stylesheet" href="styles.css?v=20260725-accounts">
 </head>
 <body>
   <div id="authScreen" class="auth-screen hidden" aria-live="polite"></div>
@@ -36,8 +36,7 @@
       <div class="sidebar-bottom">
         <button class="nav-item" data-view="ajustes"><span class="nav-icon">⚙</span><span>Ajustes</span></button>
         <div class="profile-mini">
-          <span class="avatar avatar-green" id="profileAvatar">BN</span>
-          <div><strong id="profileName">Bosco Nunez</strong><small id="profileRole">Propietario</small></div>
+          <button class="profile-account-button" data-action="open-account" aria-label="Abrir mi cuenta"><span class="avatar avatar-green" id="profileAvatar">BN</span><span><strong id="profileName">Bosco Nunez</strong><small id="profileRole">Propietario</small></span></button>
           <button class="icon-button" data-action="logout" aria-label="Cerrar sesion">↳</button>
         </div>
       </div>
@@ -65,14 +64,15 @@
       <section class="view" id="view-equipo"></section>
       <section class="view" id="view-planes"></section>
       <section class="view" id="view-ajustes"></section>
+      <section class="view" id="view-cuenta"></section>
     </main>
   </div>
 
   <div id="modalRoot"></div>
   <div class="toast" id="toast"><span>✓</span><p></p></div>
 
-  <script src="config.js?v=20260725-member-purge"></script>
+  <script src="config.js?v=20260725-accounts"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="app.js?v=20260725-workspace-controls"></script>
+  <script src="app.js?v=20260725-accounts"></script>
 </body>
 </html>

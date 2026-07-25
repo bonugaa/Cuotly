@@ -125,6 +125,7 @@ const app = {
   paymentFilter: 'all',
   reportFilter: 'all',
   settingsTab: 'general',
+  accountTab: 'perfil',
   calendarMonth: startOfMonth(new Date()),
   search: '',
   auth: {
@@ -133,6 +134,9 @@ const app = {
     user: null,
     ready: false,
     mode: 'login',
+    mfaEnrollment: null,
+    mfaFactor: null,
+    mfaBusy: false,
   },
   workspace: {
     id: '',
@@ -273,6 +277,26 @@ function getAuthEmail(user) {
   return user?.email || '';
 }
 
+function accountProfile() {
+  const meta = app.auth.user?.user_metadata || {};
+  return {
+    fullName: meta.full_name || meta.name || getAuthName(app.auth.user),
+    phone: meta.phone || '',
+    jobTitle: meta.job_title || '',
+    bio: meta.bio || '',
+    avatarUrl: meta.avatar_url || meta.avatarUrl || '',
+    notifications: meta.notification_preferences || { app: true, push: false, assignments: true, reminders: true, payments: true },
+  };
+}
+
+function avatarMarkup(name, avatarUrl, classes = 'avatar avatar-green') {
+  return `<span class="${classes}${avatarUrl ? ' image-avatar' : ''}"${avatarUrl ? ` style="background-image:url('${esc(avatarUrl)}')"` : ''}>${avatarUrl ? '' : esc(initials(name))}</span>`;
+}
+
+function emailProviderEnabled() {
+  return (app.auth.user?.app_metadata?.providers || []).includes('email');
+}
+
 function authErrorMessage(error, fallback) {
   const message = String(error?.message || '').toLowerCase();
   if (message.includes('email not confirmed')) return 'La cuenta existe, pero falta confirmar el email antes de iniciar sesion.';
@@ -328,6 +352,132 @@ function renderAuthScreen(mode = app.auth.mode, message = '') {
       <button class="text-button auth-switch" data-action="auth-mode" data-mode="${isRegister ? 'login' : 'register'}">${isRegister ? 'Ya tengo cuenta' : 'Crear cuenta'}</button>
     </section>
   `;
+}
+
+function renderMfaScreen(mode, message = '') {
+  const authScreen = $('#authScreen');
+  $('#appShell')?.classList.add('hidden');
+  authScreen.classList.remove('hidden');
+  const setup = mode === 'setup';
+  const enrollment = app.auth.mfaEnrollment;
+  authScreen.innerHTML = `
+    <section class="auth-card mfa-card">
+      <div class="auth-brand"><span class="brand-mark">Q</span><strong>Cuotly</strong></div>
+      ${message ? `<div class="auth-message">${esc(message)}</div>` : ''}
+      <p class="eyebrow">SEGURIDAD OBLIGATORIA</p>
+      <h1>${setup ? 'Protege tu cuenta' : 'Confirma tu acceso'}</h1>
+      <p>${setup ? 'Añade Cuotly a Google Authenticator, Microsoft Authenticator o una app equivalente. También podrás añadir un segundo autenticador como respaldo desde tu cuenta.' : 'Introduce el código de seis cifras de tu aplicación de autenticación.'}</p>
+      ${setup && enrollment ? `<div class="mfa-qr">${enrollment.totp?.qr_code ? `<img src="${esc(enrollment.totp.qr_code)}" alt="Código QR para autenticador">` : ''}<code>${esc(enrollment.totp?.secret || '')}</code></div>` : ''}
+      ${setup && !enrollment ? '<button class="primary-button full-width" data-action="start-mfa-enroll">Generar código de seguridad</button>' : `
+        <form id="mfaVerifyForm" class="auth-form" data-mode="${setup ? 'setup' : 'verify'}">
+          <label>Código de autenticación<input name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" minlength="6" maxlength="6" required placeholder="000000"></label>
+          <button class="primary-button full-width">Verificar y continuar</button>
+        </form>`}
+      <button class="text-button auth-switch" data-action="logout">Cerrar sesión</button>
+    </section>
+  `;
+}
+
+function needsAccountCompletion() {
+  const meta = app.auth.user?.user_metadata || {};
+  return Boolean(meta.cuotly_invite_id) && !meta.account_completed;
+}
+
+function renderAccountCompletion(message = '') {
+  const authScreen = $('#authScreen');
+  $('#appShell')?.classList.add('hidden');
+  authScreen.classList.remove('hidden');
+  authScreen.innerHTML = `
+    <section class="auth-card">
+      <div class="auth-brand"><span class="brand-mark">Q</span><strong>Cuotly</strong></div>
+      ${message ? `<div class="auth-message">${esc(message)}</div>` : ''}
+      <h1>Completa tu cuenta</h1>
+      <p>Esta será tu cuenta personal. Podrás tener tu propio espacio y decidir si aceptas las invitaciones que recibas.</p>
+      <form id="accountCompletionForm" class="auth-form">
+        <label>Nombre<input name="name" autocomplete="name" required maxlength="80"></label>
+        <label>Contraseña<input name="password" type="password" autocomplete="new-password" minlength="8" required></label>
+        <label>Repite la contraseña<input name="confirmPassword" type="password" autocomplete="new-password" minlength="8" required></label>
+        <button class="primary-button full-width">Continuar</button>
+      </form>
+    </section>
+  `;
+}
+
+async function handleAccountCompletion(form) {
+  const data = Object.fromEntries(new FormData(form));
+  if (data.password !== data.confirmPassword) { renderAccountCompletion('Las contraseñas no coinciden.'); return; }
+  const { error } = await app.auth.client.auth.updateUser({ password: data.password, data: { ...(app.auth.user?.user_metadata || {}), name: data.name.trim(), full_name: data.name.trim(), account_completed: true } });
+  if (error) { renderAccountCompletion(error.message || 'No se pudo completar la cuenta.'); return; }
+  const { data: sessionData } = await app.auth.client.auth.getSession();
+  app.auth.session = sessionData?.session || app.auth.session;
+  app.auth.user = app.auth.session?.user || app.auth.user;
+  await startApp();
+}
+
+async function getVerifiedMfaFactors() {
+  const { data, error } = await app.auth.client.auth.mfa.listFactors();
+  if (error) throw error;
+  return [...(data?.totp || [])].filter(item => item.status === 'verified');
+}
+
+async function mfaGate() {
+  if (!app.auth.client || !app.auth.user) return false;
+  const { data, error } = await app.auth.client.auth.mfa.getAuthenticatorAssuranceLevel();
+  if (error) {
+    renderMfaScreen('verify', 'No se pudo comprobar la seguridad de la cuenta. Inténtalo de nuevo.');
+    return false;
+  }
+  if (data?.currentLevel === 'aal2') return true;
+  try {
+    const factors = await getVerifiedMfaFactors();
+    app.auth.mfaFactor = factors[0] || null;
+    renderMfaScreen(factors.length ? 'verify' : 'setup');
+  } catch {
+    renderMfaScreen('verify', 'No se pudo preparar la verificación en dos pasos.');
+  }
+  return false;
+}
+
+async function startMfaEnrollment() {
+  if (!app.auth.client || app.auth.mfaBusy) return;
+  app.auth.mfaBusy = true;
+  try {
+    const { data, error } = await app.auth.client.auth.mfa.enroll({ factorType: 'totp', friendlyName: `Cuotly ${new Date().toLocaleDateString('es-ES')}` });
+    if (error) throw error;
+    app.auth.mfaEnrollment = data;
+    app.auth.mfaFactor = data;
+    renderMfaScreen('setup');
+  } catch (error) {
+    renderMfaScreen('setup', error.message || 'No se pudo generar el código de seguridad.');
+  } finally {
+    app.auth.mfaBusy = false;
+  }
+}
+
+async function verifyMfa(form) {
+  if (!app.auth.client || app.auth.mfaBusy) return;
+  const code = String(new FormData(form).get('code') || '').replace(/\s/g, '');
+  const factorId = app.auth.mfaEnrollment?.id || app.auth.mfaFactor?.id;
+  if (!factorId || !/^\d{6}$/.test(code)) {
+    renderMfaScreen(form.dataset.mode || 'verify', 'Escribe los seis números de tu autenticador.');
+    return;
+  }
+  app.auth.mfaBusy = true;
+  try {
+    const { data: challenge, error: challengeError } = await app.auth.client.auth.mfa.challenge({ factorId });
+    if (challengeError) throw challengeError;
+    const { error } = await app.auth.client.auth.mfa.verify({ factorId, challengeId: challenge.id, code });
+    if (error) throw error;
+    const { data } = await app.auth.client.auth.getSession();
+    app.auth.session = data?.session || app.auth.session;
+    app.auth.user = app.auth.session?.user || app.auth.user;
+    app.auth.mfaEnrollment = null;
+    await startApp();
+  } catch (error) {
+    renderMfaScreen(form.dataset.mode || 'verify', error.message || 'El código no es válido.');
+  } finally {
+    app.auth.mfaBusy = false;
+  }
 }
 
 function showAppShell() {
@@ -526,7 +676,7 @@ async function handleAuthRegister(form) {
   const { data: result, error } = await app.auth.client.auth.signUp({
     email: data.email.trim(),
     password: data.password,
-    options: { data: { name: data.name.trim(), full_name: data.name.trim() } },
+    options: { data: { name: data.name.trim(), full_name: data.name.trim(), account_completed: true } },
   });
   if (error) {
     renderAuthScreen('register', authErrorMessage(error, 'No se ha podido crear la cuenta. Revisa los datos.'));
@@ -1057,7 +1207,7 @@ function seedState() {
     currentUserId: 'user_owner',
     ownerUserId: '',
     settings: {
-      workspaceName: 'Cuotly · Restaurantes',
+      workspaceName: 'Mi espacio',
       timezone: 'Europe/Madrid',
       ivaRate: 21,
       irpfRate: 15,
@@ -1090,7 +1240,7 @@ function seedState() {
     version: 3,
     currentUserId: 'user_owner',
     settings: {
-      workspaceName: 'Cuotly · Restaurantes',
+      workspaceName: 'Mi espacio',
       timezone: 'Europe/Madrid',
       ivaRate: 21,
       irpfRate: 15,
@@ -1374,6 +1524,7 @@ function render() {
     equipo: renderTeam,
     planes: renderPlans,
     ajustes: renderSettings,
+    cuenta: renderAccount,
   };
   renderers[app.view]?.();
   saveState();
@@ -1381,6 +1532,7 @@ function render() {
 
 function updateShell() {
   const user = getCurrentUser();
+  const profile = accountProfile();
   const restaurants = visibleRestaurants();
   const services = visibleServices();
   const tasks = app.state.tasks.filter(task => services.some(service => service.id === task.serviceId) && canSeeTask(task));
@@ -1393,10 +1545,15 @@ function updateShell() {
   $('#navPayments')?.closest('.nav-item')?.classList.toggle('hidden', !canViewPayments());
   $('[data-view="informes"]')?.classList.toggle('hidden', !canViewReports());
   $('#alertCount').textContent = alerts.length;
-  $('#profileName').textContent = user.name;
+  $('#profileName').textContent = profile.fullName;
   $('#profileRole').textContent = ROLE_LABELS[user.role] || user.role;
-  $('#profileAvatar').textContent = initials(user.name);
-  $('#topAvatar').textContent = initials(user.name);
+  ['#profileAvatar', '#topAvatar'].forEach(selector => {
+    const avatar = $(selector);
+    if (!avatar) return;
+    avatar.textContent = profile.avatarUrl ? '' : initials(profile.fullName);
+    avatar.classList.toggle('image-avatar', Boolean(profile.avatarUrl));
+    avatar.style.backgroundImage = profile.avatarUrl ? `url("${profile.avatarUrl}")` : '';
+  });
 }
 
 function getAlerts() {
@@ -2013,7 +2170,7 @@ function teamCard(member) {
       : member.role === 'admin' ? 'Todos los restaurantes' : 'Solo planes asignados';
   return `
     <article class="team-card ${member.role === 'owner' ? 'owner-card' : ''}">
-      <div class="team-top"><span class="avatar big ${member.role === 'owner' ? 'avatar-green' : member.role === 'admin' ? 'peach' : 'sky'}">${initials(member.name)}</span><span class="role-pill ${member.role}">${ROLE_LABELS[member.role]}</span></div>
+      <div class="team-top">${avatarMarkup(member.name, member.avatarUrl, `avatar big ${member.role === 'owner' ? 'avatar-green' : member.role === 'admin' ? 'peach' : 'sky'}`)}<span class="role-pill ${member.role}">${ROLE_LABELS[member.role]}</span></div>
       <h3>${esc(member.name)}</h3><p>${esc(member.email)}</p>
       ${member.invitedAt ? `<p><small>Invitacion enviada ${formatDateTime(member.invitedAt)}</small></p>` : ''}
       ${member.registeredUser ? '<p><small>Usuario ya registrado</small></p>' : ''}
@@ -2060,6 +2217,183 @@ function planCard(p) {
   `;
 }
 
+function renderAccount() {
+  const profile = accountProfile();
+  const tabs = [['perfil', 'Perfil'], ['espacios', 'Mis espacios'], ['seguridad', 'Seguridad'], ['notificaciones', 'Notificaciones'], ['privacidad', 'Privacidad']];
+  $('#view-cuenta').innerHTML = `
+    <div class="page-heading compact"><div><p class="eyebrow">CUENTA PERSONAL</p><h1>Mi cuenta</h1><p>Tu perfil es privado. Los espacios en los que trabajas y tus permisos se gestionan por separado.</p></div></div>
+    <div class="settings-layout account-layout">
+      <section class="panel settings-menu">${tabs.map(([key, label]) => `<button class="${app.accountTab === key ? 'active' : ''}" data-action="account-tab" data-tab="${key}">${label}</button>`).join('')}</section>
+      <section class="panel settings-content">${accountTabContent(profile)}</section>
+    </div>
+  `;
+}
+
+function accountTabContent(profile) {
+  if (app.accountTab === 'espacios') {
+    const spaces = app.workspace.workspaces || [];
+    return `
+      <h2>Mis espacios</h2>
+      <p class="settings-copy">Cada espacio mantiene sus restaurantes, equipo y datos separados. Tu cuenta puede ser propietaria de varios y colaborar en otros.</p>
+      <div class="workspace-list settings-workspaces">${spaces.map(space => `<article class="workspace-row ${space.id === app.workspace.id ? 'active-space' : ''}"><button class="secondary-button workspace-choice" data-action="switch-workspace" data-id="${space.id}"><span><strong>${esc(space.name)}</strong><small>${esc(ROLE_LABELS[space.role] || space.role)}</small></span><b>${space.id === app.workspace.id ? 'Actual' : 'Abrir'}</b></button>${space.role === 'owner' ? `<button class="small-button danger-text" data-action="delete-workspace" data-id="${space.id}">Eliminar</button>` : ''}</article>`).join('')}</div>
+      <form id="workspaceCreateForm" class="settings-danger"><h2>Crear espacio</h2><p class="settings-copy">El nuevo espacio será privado y empezará vacío.</p><label>Nombre del espacio<input name="workspaceName" required maxlength="120" placeholder="El nombre que quieras"></label><button class="secondary-button">Crear espacio</button></form>
+    `;
+  }
+  if (app.accountTab === 'seguridad') {
+    const provider = emailProviderEnabled();
+    return `
+      <h2>Seguridad</h2>
+      <label>Email de la cuenta<input value="${esc(getAuthEmail(app.auth.user))}" disabled></label>
+      <div class="security-card"><div><strong>Contraseña</strong><p>${provider ? 'Tu cuenta puede acceder con email y contraseña.' : 'Entraste con Google. Puedes crear una contraseña para tener ambas formas de acceso.'}</p></div><button class="secondary-button" data-action="open-password-modal">${provider ? 'Cambiar contraseña' : 'Crear contraseña'}</button></div>
+      <div class="security-card"><div><strong>Verificación en dos pasos</strong><p>Está activada y es obligatoria para acceder a Cuotly.</p></div><button class="secondary-button" data-action="open-backup-mfa">Añadir autenticador de respaldo</button></div>
+      <p class="muted-note">Guarda el autenticador de respaldo en otro dispositivo. Supabase no ofrece códigos de recuperación.</p>
+    `;
+  }
+  if (app.accountTab === 'notificaciones') {
+    const n = profile.notifications;
+    return `
+      <h2>Notificaciones</h2>
+      <p class="settings-copy">Los avisos se muestran dentro de Cuotly. Puedes permitir avisos del navegador para recibirlos también en el móvil cuando tengas la aplicación abierta.</p>
+      <form id="accountNotificationsForm">
+        <label class="toggle-row"><span><strong>Avisos en Cuotly</strong><small>Alertas dentro de tu cuenta.</small></span><input name="app" type="checkbox" ${n.app !== false ? 'checked' : ''}></label>
+        <label class="toggle-row"><span><strong>Avisos en este dispositivo</strong><small>Solicita permiso al navegador para mostrar avisos en ordenador o móvil.</small></span><input name="push" type="checkbox" ${n.push ? 'checked' : ''}></label>
+        <label class="toggle-row"><span><strong>Trabajos asignados</strong><small>Cuando te asignen o actualicen un cambio.</small></span><input name="assignments" type="checkbox" ${n.assignments !== false ? 'checked' : ''}></label>
+        <label class="toggle-row"><span><strong>Pagos y renovaciones</strong><small>Solo si tu permiso te permite verlos.</small></span><input name="payments" type="checkbox" ${n.payments !== false ? 'checked' : ''}></label>
+        <button class="primary-button">Guardar preferencias</button>
+      </form>
+    `;
+  }
+  if (app.accountTab === 'privacidad') {
+    return `
+      <h2>Privacidad y datos</h2>
+      <p class="settings-copy">Puedes descargar los datos de tu cuenta: perfil, preferencias, espacios y permisos. No contiene contraseñas, códigos de autenticación ni datos privados de otras personas.</p>
+      <div class="security-card"><div><strong>Descargar mis datos</strong><p>Genera un archivo privado en formato JSON.</p></div><button class="secondary-button" data-action="export-account-data">Descargar datos</button></div>
+      <div class="settings-danger"><h2>Eliminar cuenta</h2><p>Se eliminarán tus espacios propios y tu perfil. En los espacios de otros se conservará el historial de tareas y notas como “Cuenta eliminada”.</p><button class="danger-button" data-action="open-delete-account-modal">Eliminar mi cuenta</button></div>
+    `;
+  }
+  return `
+    <h2>Perfil</h2>
+    <p class="settings-copy">Tu nombre y tu foto ayudan al equipo a identificarte. El resto de los datos solo los ves tú.</p>
+    <form id="accountProfileForm">
+      <div class="account-profile-head">${avatarMarkup(profile.fullName, profile.avatarUrl, 'avatar large-avatar avatar-green')}<label class="avatar-upload">Cambiar foto<input name="avatar" type="file" accept="image/png,image/jpeg,image/webp"></label></div>
+      <div class="form-grid">
+        <label>Nombre<input name="fullName" maxlength="80" required value="${esc(profile.fullName)}"></label>
+        <label>Email<input value="${esc(getAuthEmail(app.auth.user))}" disabled></label>
+        <label>Teléfono<input name="phone" maxlength="40" value="${esc(profile.phone)}" placeholder="Opcional"></label>
+        <label>Cargo<input name="jobTitle" maxlength="80" value="${esc(profile.jobTitle)}" placeholder="Ej. Responsable de mantenimiento"></label>
+        <label class="wide">Bio breve<textarea name="bio" maxlength="280" placeholder="Solo visible para ti">${esc(profile.bio)}</textarea></label>
+      </div>
+      <button class="primary-button">Guardar perfil</button>
+    </form>
+  `;
+}
+
+async function uploadAccountAvatar(file) {
+  if (!file) return accountProfile().avatarUrl;
+  if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 2 * 1024 * 1024) throw new Error('La foto debe ser JPG, PNG o WEBP y pesar menos de 2 MB.');
+  const path = `${app.auth.user.id}/avatar.${file.name.split('.').pop().toLowerCase()}`;
+  const { error } = await app.auth.client.storage.from('cuotly-avatars').upload(path, file, { upsert: true, cacheControl: '3600', contentType: file.type });
+  if (error) throw error;
+  const { data } = app.auth.client.storage.from('cuotly-avatars').getPublicUrl(path);
+  return `${data.publicUrl}?v=${Date.now()}`;
+}
+
+async function updateAccountProfile(values) {
+  const token = await getAccessToken();
+  const response = await fetch('/api/account', { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` }, body: JSON.stringify({ action: 'profile', profile: values }) });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(result.error || 'No se pudo guardar el perfil.');
+  app.auth.user.user_metadata = { ...(app.auth.user.user_metadata || {}), ...result.profile };
+  const currentMember = getCurrentUser();
+  if (currentMember) {
+    currentMember.name = result.profile.full_name;
+    currentMember.avatarUrl = result.profile.avatar_url || '';
+  }
+  return result.profile;
+}
+
+async function handleAccountProfileSubmit(form) {
+  const data = new FormData(form);
+  const button = form.querySelector('button.primary-button');
+  button.disabled = true;
+  button.textContent = 'Guardando...';
+  try {
+    const avatarUrl = await uploadAccountAvatar(data.get('avatar'));
+    await updateAccountProfile({ full_name: String(data.get('fullName') || '').trim(), phone: data.get('phone'), job_title: data.get('jobTitle'), bio: data.get('bio'), avatar_url: avatarUrl, notification_preferences: accountProfile().notifications });
+    render();
+    showToast('Perfil actualizado');
+  } catch (error) {
+    showToast(error.message || 'No se pudo guardar el perfil.');
+    button.disabled = false;
+    button.textContent = 'Guardar perfil';
+  }
+}
+
+async function handleAccountNotifications(form) {
+  const data = new FormData(form);
+  const preferences = { app: data.has('app'), push: data.has('push'), assignments: data.has('assignments'), reminders: true, payments: data.has('payments') };
+  if (preferences.push && 'Notification' in window && Notification.permission === 'default') await Notification.requestPermission();
+  if (preferences.push && 'Notification' in window && Notification.permission === 'denied') {
+    preferences.push = false;
+    showToast('El navegador tiene los avisos bloqueados. Puedes activarlos desde sus ajustes.');
+  }
+  try {
+    await updateAccountProfile({ full_name: accountProfile().fullName, phone: accountProfile().phone, job_title: accountProfile().jobTitle, bio: accountProfile().bio, avatar_url: accountProfile().avatarUrl, notification_preferences: preferences });
+    renderAccount();
+    showToast('Preferencias guardadas');
+  } catch (error) { showToast(error.message || 'No se pudieron guardar las preferencias.'); }
+}
+
+function openPasswordModal() {
+  const provider = emailProviderEnabled();
+  openModal(modalFrame(provider ? 'Cambiar contraseña' : 'Crear contraseña', 'SEGURIDAD', `
+    <form id="accountPasswordForm"><div class="form-grid">${provider ? '<label class="wide">Contraseña actual<input name="currentPassword" type="password" autocomplete="current-password" required></label>' : ''}<label class="wide">Nueva contraseña<input name="newPassword" type="password" autocomplete="new-password" minlength="8" required></label><label class="wide">Repite la nueva contraseña<input name="confirmPassword" type="password" autocomplete="new-password" minlength="8" required></label></div><div class="modal-actions"><button type="button" class="secondary-button" data-action="close-modal">Cancelar</button><button class="primary-button">Guardar contraseña</button></div></form>
+  `));
+}
+
+async function handlePasswordSubmit(form) {
+  const data = Object.fromEntries(new FormData(form));
+  if (data.newPassword !== data.confirmPassword) { showToast('Las contraseñas no coinciden.'); return; }
+  if (emailProviderEnabled()) {
+    const config = window.CUOTLY_CONFIG || {};
+    const verification = await fetch(`${String(config.supabaseUrl || '').replace(/\/+$/, '')}/auth/v1/token?grant_type=password`, {
+      method: 'POST',
+      headers: { apikey: config.supabaseAnonKey || '', 'content-type': 'application/json' },
+      body: JSON.stringify({ email: getAuthEmail(app.auth.user), password: data.currentPassword }),
+    });
+    if (!verification.ok) { showToast('La contraseña actual no es correcta.'); return; }
+  }
+  const { error } = await app.auth.client.auth.updateUser({ password: data.newPassword });
+  if (error) { showToast(error.message || 'No se pudo guardar la contraseña.'); return; }
+  closeModal();
+  showToast('Contraseña actualizada');
+}
+
+function openDeleteAccountModal() {
+  openModal(modalFrame('Eliminar mi cuenta', 'ACCIÓN DEFINITIVA', `<form id="deleteAccountForm"><p class="settings-copy">Esta acción no se puede deshacer. Escribe <strong>ELIMINAR</strong> para confirmar.</p><label>Confirmación<input name="confirmation" autocomplete="off" required></label><div class="modal-actions"><button type="button" class="secondary-button" data-action="close-modal">Cancelar</button><button class="danger-button">Eliminar mi cuenta</button></div></form>`));
+}
+
+async function handleDeleteAccount(form) {
+  const confirmation = String(new FormData(form).get('confirmation') || '');
+  const token = await getAccessToken();
+  const response = await fetch('/api/account', { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` }, body: JSON.stringify({ action: 'delete-account', confirmation }) });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) { showToast(result.error || 'No se pudo eliminar la cuenta.'); return; }
+  await logout();
+  renderAuthScreen('register', 'Tu cuenta y tus espacios propios se han eliminado.');
+}
+
+function exportAccountData() {
+  const profile = accountProfile();
+  const payload = { exportedAt: nowIso(), profile: { name: profile.fullName, email: getAuthEmail(app.auth.user), phone: profile.phone, jobTitle: profile.jobTitle, bio: profile.bio, avatarUrl: profile.avatarUrl, notifications: profile.notifications }, spaces: (app.workspace.workspaces || []).map(space => ({ name: space.name, role: ROLE_LABELS[space.role] || space.role })), security: { twoFactor: 'enabled', passwordAccess: emailProviderEnabled() } };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = 'cuotly-mis-datos.json';
+  link.click();
+  URL.revokeObjectURL(link.href);
+}
+
 function renderSettings() {
   const ownerTabs = [
     ['general', 'General'],
@@ -2067,10 +2401,9 @@ function renderSettings() {
     ['notificaciones', 'Notificaciones'],
     ['seguridad', 'Seguridad y accesos'],
     ['integraciones', 'Integraciones'],
-    ['espacios', 'Espacios de trabajo'],
   ];
-  const tabs = isOwner() ? ownerTabs : [['espacios', 'Espacios de trabajo']];
-  if (!tabs.some(([key]) => key === app.settingsTab)) app.settingsTab = 'espacios';
+  const tabs = isOwner() ? ownerTabs : [['general', 'Información del espacio']];
+  if (!tabs.some(([key]) => key === app.settingsTab)) app.settingsTab = 'general';
   $('#view-ajustes').innerHTML = `
     <div class="page-heading compact"><div><p class="eyebrow">CONFIGURACION</p><h1>Ajustes</h1><p>Calendario laboral, avisos, impuestos y preferencias.</p></div></div>
     <div class="settings-layout">
@@ -2082,17 +2415,6 @@ function renderSettings() {
 
 function settingsTabContent() {
   const s = app.state.settings;
-  if (app.settingsTab === 'espacios') {
-    const spaces = app.workspace.workspaces || [];
-    const inactive = app.state.members.filter(member => member.active === false && member.role !== 'owner');
-    return `
-      <h2>Espacios de trabajo</h2>
-      <p class="settings-copy">Puedes usar la misma cuenta en varios espacios de Cuotly. Cada espacio conserva sus restaurantes, planes y equipo por separado.</p>
-      <div class="workspace-list settings-workspaces">${spaces.map(space => `<article class="workspace-row ${space.id === app.workspace.id ? 'active-space' : ''}"><button class="secondary-button workspace-choice" data-action="switch-workspace" data-id="${space.id}"><span><strong>${esc(space.name)}</strong><small>${esc(ROLE_LABELS[space.role] || space.role)}</small></span><b>${space.id === app.workspace.id ? 'Actual' : 'Abrir'}</b></button>${space.role === 'owner' ? `<button class="small-button danger-text" data-action="delete-workspace" data-id="${space.id}">Eliminar</button>` : ''}</article>`).join('')}</div>
-      <form id="workspaceCreateForm" class="settings-danger"><label>Crear otro espacio<input name="workspaceName" required maxlength="120" placeholder="El nombre que quieras"></label><button class="secondary-button">Crear espacio</button></form>
-      ${isOwner() ? `<div class="settings-danger"><h2>Miembros anteriores</h2><p class="settings-copy">Los expulsados no tienen acceso. Puedes reactivarlos conservando sus asignaciones o eliminarlos definitivamente.</p>${inactive.length ? `<div class="former-members">${inactive.map(member => `<article><div><strong>${esc(member.name)}</strong><small>${esc(member.email)}${member.removedAt ? ` · Expulsado ${formatDateTime(member.removedAt)}` : ''}</small></div><div class="row-actions"><button class="small-button" data-action="restore-member" data-id="${member.id}">Reactivar</button><button class="small-button danger-text" data-action="purge-member" data-id="${member.id}">Eliminar</button></div></article>`).join('')}</div>` : '<p class="muted-note">No hay miembros anteriores.</p>'}</div>` : ''}
-    `;
-  }
   if (app.settingsTab === 'calendario') {
     return `
       <h2>Calendario laboral de Madrid</h2>
@@ -2114,11 +2436,13 @@ function settingsTabContent() {
     `;
   }
   if (app.settingsTab === 'seguridad') {
+    const inactive = app.state.members.filter(member => member.active === false && member.role !== 'owner');
     return `
       <h2>Seguridad y accesos</h2>
-      <p class="settings-copy">Cuotly usara las mismas cuentas que Fiometra cuando se publique con Supabase. El propietario siempre conserva el control total.</p>
+      <p class="settings-copy">El propietario conserva el control total de este espacio. Cada miembro mantiene una cuenta privada que puede usar también en otros espacios.</p>
       <div class="access-preview">${app.state.members.map(member => `<div><span class="avatar tiny ${member.role === 'owner' ? 'avatar-green' : 'sky'}">${initials(member.name)}</span><strong>${esc(member.name)}</strong><small>${ROLE_LABELS[member.role]}</small></div>`).join('')}</div>
       ${isOwner() ? '<button class="secondary-button" data-action="open-member-modal">Gestionar equipo</button>' : ''}
+      ${isOwner() ? `<div class="settings-danger"><h2>Miembros anteriores</h2><p class="settings-copy">Los expulsados no tienen acceso. Puedes reactivarlos conservando sus asignaciones o eliminarlos definitivamente durante 20 días.</p>${inactive.length ? `<div class="former-members">${inactive.map(member => `<article><div><strong>${esc(member.name)}</strong><small>${esc(member.email)}${member.removedAt ? ` · Expulsado ${formatDateTime(member.removedAt)}` : ''}</small></div><div class="row-actions"><button class="small-button" data-action="restore-member" data-id="${member.id}">Reactivar</button><button class="small-button danger-text" data-action="purge-member" data-id="${member.id}">Eliminar</button></div></article>`).join('')}</div>` : '<p class="muted-note">No hay miembros anteriores.</p>'}</div>` : ''}
     `;
   }
   if (app.settingsTab === 'integraciones') {
@@ -2128,6 +2452,14 @@ function settingsTabContent() {
       <label>IVA de mantenimiento<input value="${s.ivaRate}%" disabled></label>
       <label>IRPF de mantenimiento<input value="${s.irpfRate}%" disabled></label>
       <button class="secondary-button" data-action="export-payments">Exportar pagos para Fiometra</button>
+    `;
+  }
+  if (!isOwner()) {
+    return `
+      <h2>Informacion del espacio</h2>
+      <p class="settings-copy">Estos ajustes los gestiona el propietario del espacio.</p>
+      <div class="security-card"><div><strong>${esc(s.workspaceName || 'Mi espacio')}</strong><p>Espacio de trabajo actual.</p></div></div>
+      <div class="security-card"><div><strong>Zona horaria</strong><p>${esc(s.timezone || 'Europe/Madrid')}</p></div></div>
     `;
   }
   return `
@@ -2444,13 +2776,12 @@ function openMemberModal(id) {
   openModal(modalFrame(isEdit ? 'Gestionar miembro' : 'Invitar miembro', 'EQUIPO', `
     <form id="memberForm" data-id="${member.id || ''}">
       <div class="form-grid">
-        <label>Nombre<input name="name" required value="${esc(member.name || '')}"></label>
-        <label>Email<input name="email" type="email" required value="${esc(member.email || '')}"></label>
+        ${isEdit ? `<label class="wide">Miembro<input value="${esc(member.name)} · ${esc(member.email)}" disabled></label>` : '<label class="wide">Email<input name="email" type="email" required placeholder="persona@email.com"></label>'}
         <label class="wide">Permiso<select name="role"><option value="worker" ${member.role === 'worker' ? 'selected' : ''}>Trabajador: solo sus servicios</option><option value="admin" ${member.role === 'admin' ? 'selected' : ''}>Administrador: puede gestionar todo</option>${member.role === 'owner' ? '<option value="owner" selected>Propietario</option>' : ''}</select></label>
         ${member.role !== 'owner' ? `<div class="wide assignment-box"><div class="assignment-title"><strong>Restaurantes asignados</strong><small>Marca uno o varios restaurantes. Si no marcas ninguno, los trabajadores solo veran los planes que tengan asignados directamente.</small></div><div class="check-grid">${restaurantAccessFields || '<p class="muted-note">Primero crea un restaurante.</p>'}</div></div>` : ''}
-        ${!isEdit ? `<label class="wide">Tipo de alta<select name="memberMode"><option value="invite">Nuevo usuario: enviar invitacion</option><option value="existing">Usuario registrado: enviar enlace de acceso</option><option value="manual">Anadir sin enviar email</option></select></label>` : ''}
+        ${!isEdit ? '<p class="muted-note wide">La persona recibirá una invitación. Si ya tiene cuenta, tendrá que aceptarla; si no, creará su cuenta privada y después decidirá si se une.</p>' : ''}
       </div>
-      <div class="modal-actions"><button type="button" class="secondary-button" data-action="close-modal">Cancelar</button><button class="primary-button">${isEdit ? 'Guardar permisos' : 'Guardar miembro'}</button></div>
+      <div class="modal-actions"><button type="button" class="secondary-button" data-action="close-modal">Cancelar</button><button class="primary-button">${isEdit ? 'Guardar permisos' : 'Enviar invitación'}</button></div>
     </form>
   `));
 }
@@ -2725,8 +3056,8 @@ async function handleMemberSubmit(form) {
   const restaurantIds = data.role === 'owner' ? [] : formData.getAll('restaurantIds').map(String);
   const payload = {
     id,
-    name: data.name.trim(),
-    email: data.email.trim(),
+    name: existing?.name || '',
+    email: (existing?.email || data.email || '').trim().toLowerCase(),
     role: data.role,
     active: true,
     invitedAt: existing?.invitedAt || '',
@@ -2739,29 +3070,17 @@ async function handleMemberSubmit(form) {
   const previousText = submitButton?.textContent || '';
   if (submitButton) {
     submitButton.disabled = true;
-    submitButton.textContent = existing ? 'Guardando...' : data.memberMode === 'manual' ? 'Anadiendo...' : 'Enviando email...';
+    submitButton.textContent = existing ? 'Guardando...' : 'Enviando invitación...';
   }
 
   try {
     if (existing) {
       Object.assign(existing, payload);
-      try {
-        await sendMemberInvitation(payload, 'sync');
-      } catch (error) {
-        console.warn('No se pudo sincronizar el acceso del miembro', error);
-      }
+      await saveCloudStateNow();
       showToast('Permisos actualizados');
     } else {
-      if (data.memberMode === 'manual') {
-        payload.registeredUser = true;
-        payload.addedAt = nowIso();
-      } else {
-        payload.registeredUser = data.memberMode === 'existing';
-        await sendMemberInvitation(payload, data.memberMode);
-        payload.invitedAt = nowIso();
-      }
-      app.state.members.push(payload);
-      showToast(data.memberMode === 'manual' ? 'Usuario registrado anadido' : data.memberMode === 'existing' ? 'Email de acceso enviado' : 'Invitacion enviada por email');
+      await sendMemberInvitation(payload);
+      showToast('Invitación enviada. Se unirá cuando la acepte.');
     }
     closeModal();
     render();
@@ -3270,6 +3589,10 @@ async function toggleFiometra(id) {
 }
 
 function handleSettingsSubmit(form) {
+  if (!isOwner()) {
+    showToast('Solo el propietario puede modificar los ajustes del espacio.');
+    return;
+  }
   const data = Object.fromEntries(new FormData(form));
   if (form.id === 'settingsGeneralForm') {
     app.state.settings.workspaceName = data.workspaceName.trim();
@@ -3310,8 +3633,16 @@ async function handleClick(event) {
   const id = actionEl.dataset.id;
   if (action === 'close-modal') { closeModal(); return; }
   if (action === 'logout') { logout(); return; }
+  if (action === 'open-account') { app.accountTab = 'perfil'; showView('cuenta'); return; }
   if (action === 'auth-mode') { renderAuthScreen(actionEl.dataset.mode || 'login'); return; }
   if (action === 'auth-google') { handleGoogleLogin(); return; }
+  if (action === 'start-mfa-enroll') { await startMfaEnrollment(); return; }
+  if (action === 'account-tab') { app.accountTab = actionEl.dataset.tab; renderAccount(); return; }
+  if (action === 'open-password-modal') { openPasswordModal(); return; }
+  if (action === 'open-backup-mfa') { app.auth.mfaEnrollment = null; closeModal(); renderMfaScreen('setup'); return; }
+  if (action === 'open-delete-account-modal') { openDeleteAccountModal(); return; }
+  if (action === 'export-account-data') { exportAccountData(); return; }
+  if (action === 'answer-invitation') { await answerInvitation(id, actionEl.dataset.answer); return; }
   if (action === 'switch-workspace') { await switchWorkspace(id); return; }
   if (action === 'delete-workspace') { await deleteWorkspace(id); return; }
   if (action === 'show-alerts') showAlertsModal();
@@ -3367,6 +3698,12 @@ function handleSubmit(event) {
     handleAuthRegister(form);
     return;
   }
+  if (form.id === 'accountCompletionForm') { handleAccountCompletion(form); return; }
+  if (form.id === 'mfaVerifyForm') { verifyMfa(form); return; }
+  if (form.id === 'accountProfileForm') { handleAccountProfileSubmit(form); return; }
+  if (form.id === 'accountNotificationsForm') { handleAccountNotifications(form); return; }
+  if (form.id === 'accountPasswordForm') { handlePasswordSubmit(form); return; }
+  if (form.id === 'deleteAccountForm') { handleDeleteAccount(form); return; }
   if (form.id === 'restaurantForm') handleRestaurantSubmit(form);
   if (form.id === 'serviceForm') handleServiceSubmit(form);
   if (form.id === 'taskForm') handleTaskSubmit(form);
@@ -3400,7 +3737,72 @@ function registerServiceWorker() {
   }
 }
 
+async function ensurePersonalWorkspace() {
+  const token = await getAccessToken();
+  if (!token) return;
+  const response = await fetch('/api/shared-state', { headers: { authorization: `Bearer ${token}` } });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(result.error || 'No se pudieron cargar tus espacios.');
+  const spaces = result.workspaces || [];
+  const personal = spaces.find(space => space.role === 'owner');
+  if (personal) {
+    app.workspace.workspaces = spaces;
+    return;
+  }
+  const created = await fetch('/api/shared-state', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+    body: JSON.stringify({ action: 'create-workspace', name: 'Mi espacio', state: seedState() }),
+  });
+  const createdResult = await created.json().catch(() => ({}));
+  if (!created.ok) throw new Error(createdResult.error || 'No se pudo crear Mi espacio.');
+  app.workspace.workspaces = createdResult.workspaces || [];
+  // A personal space is always available after creating the account, even when an invitation is pending.
+  if (!localStorage.getItem(workspaceSelectionKey())) localStorage.setItem(workspaceSelectionKey(), createdResult.workspace.id);
+}
+
+async function checkInvitationFromLink() {
+  const inviteId = new URLSearchParams(window.location.search).get('invite');
+  if (!inviteId || !app.auth.user) return;
+  const token = await getAccessToken();
+  const response = await fetch(`/api/invitation-response?inviteId=${encodeURIComponent(inviteId)}`, { headers: { authorization: `Bearer ${token}` } });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok || result.invitation?.status !== 'pending') return;
+  const invitation = result.invitation;
+  openModal(modalFrame('Invitación a un espacio', 'CUOTLY', `
+    <div class="invite-decision"><p>Te han invitado al espacio <strong>${esc(invitation.workspaceName)}</strong> como <strong>${esc(ROLE_LABELS[invitation.role] || invitation.role)}</strong>.</p><p class="settings-copy">Tu cuenta y tu espacio personal seguirán siendo privados. Decide si quieres unirte.</p></div>
+    <div class="modal-actions"><button class="secondary-button" data-action="answer-invitation" data-answer="reject" data-id="${esc(inviteId)}">Rechazar</button><button class="primary-button" data-action="answer-invitation" data-answer="accept" data-id="${esc(inviteId)}">Aceptar invitación</button></div>
+  `));
+}
+
+async function answerInvitation(inviteId, answer) {
+  const token = await getAccessToken();
+  if (!token) return;
+  const response = await fetch('/api/invitation-response', { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` }, body: JSON.stringify({ inviteId, answer }) });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) { showToast(result.error || 'No se pudo responder la invitación.'); return; }
+  const url = new URL(window.location.href);
+  url.searchParams.delete('invite');
+  window.history.replaceState({}, '', url);
+  closeModal();
+  app.workspace.workspaces = result.workspaces || app.workspace.workspaces;
+  if (answer === 'accept' && result.workspaceId) localStorage.setItem(workspaceSelectionKey(), result.workspaceId);
+  showToast(answer === 'accept' ? 'Te has unido al espacio.' : 'Invitación rechazada.');
+  app.booted = false;
+  await startApp();
+}
+
 async function startApp() {
+  if (!app.auth.user) return;
+  if (needsAccountCompletion()) { renderAccountCompletion(); return; }
+  const mfaReady = await mfaGate();
+  if (!mfaReady) return;
+  try {
+    await ensurePersonalWorkspace();
+  } catch (error) {
+    renderAuthScreen('login', error.message || 'No se pudo preparar tu cuenta.');
+    return;
+  }
   await loadState();
   if (app.workspace.needsSetup) {
     stopWorkspaceAccessCheck();
@@ -3413,6 +3815,7 @@ async function startApp() {
   render();
   app.booted = true;
   startWorkspaceAccessCheck();
+  await checkInvitationFromLink();
   if (app.auth.client && !app.persistence.cloudAvailable) {
     showToast('Falta ejecutar la actualizacion de Supabase para sincronizar dispositivos');
   }
