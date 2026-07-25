@@ -88,7 +88,9 @@ async function getLegacyState(userId) {
 }
 
 async function createWorkspace(owner, state, requestedName = '') {
-  const name = requestedName || state?.settings?.workspaceName || 'Cuotly';
+  // Names only need content: one word, one letter, or several words are all valid.
+  const cleanName = value => String(value || '').trim().replace(/\s+/g, ' ');
+  const name = cleanName(requestedName) || cleanName(state?.settings?.workspaceName) || 'Mi espacio';
   const response = await rest('cuotly_workspaces', {
     method: 'POST',
     headers: { 'content-type': 'application/json', prefer: 'return=representation' },
@@ -455,6 +457,19 @@ export default async function handler(req, res) {
     } catch (error) {
       return reply(res, error.message === 'FORBIDDEN' ? 403 : 400, { error: 'No se pudo eliminar definitivamente al miembro.' });
     }
+  }
+
+  if (req.method === 'POST' && body.action === 'delete-workspace') {
+    if (!isOwner(membership) || workspace.owner_id !== caller.id) return reply(res, 403, { error: 'Solo el propietario puede eliminar el espacio.' });
+    const response = await rest(`cuotly_workspaces?id=eq.${encodeURIComponent(selected.workspace_id)}&owner_id=eq.${encodeURIComponent(caller.id)}`, {
+      method: 'DELETE',
+      headers: { prefer: 'return=representation' },
+    });
+    if (!response.ok) return reply(res, 400, { error: 'No se pudo eliminar el espacio.' });
+    const removed = await response.json().catch(() => []);
+    if (!removed.length) return reply(res, 404, { error: 'No se encontro el espacio para eliminar.' });
+    const remaining = await membershipsForCaller(caller);
+    return reply(res, 200, { ok: true, workspaces: workspaceList(remaining), needsSetup: remaining.length === 0 });
   }
 
   if (req.method === 'GET') {
