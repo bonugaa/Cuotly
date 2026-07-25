@@ -2750,11 +2750,13 @@ async function purgeMember(id) {
   if (!member || member.role === 'owner') return;
   if (!confirm(`Eliminar definitivamente a ${member.name}? Sus tareas y notas conservarán el historial, pero ese email no podrá volver a este espacio durante 20 días.`)) return;
   try {
+    // Persist a recent expulsion before requesting the permanent removal.
+    await saveCloudStateNow();
     const token = await getAccessToken();
     const response = await fetch('/api/shared-state', {
       method: 'POST',
       headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
-      body: JSON.stringify({ action: 'purge-member', workspaceId: app.workspace.id, memberId: id }),
+      body: JSON.stringify({ action: 'purge-member', workspaceId: app.workspace.id, memberId: id, memberEmail: member.email, memberName: member.name }),
     });
     const result = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(result.error || 'No se pudo eliminar el miembro.');
