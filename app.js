@@ -12,7 +12,8 @@ const PLAN_CATALOG = {
     response: '48-72 h laborables',
     backupEvery: 3,
     report: ['Solicitudes recibidas', 'Cambios pequenos y fotografias', 'Cambios adicionales', 'Errores corregidos', 'Incidencias pendientes', 'Estado general de la web'],
-    includes: ['Revision mensual completa', '8 cambios pequenos por ciclo', '5 cambios fotograficos por ciclo', 'Atencion de incidencias', 'Copia trimestral', 'Informe mensual'],
+    timing: { response: '48-72 h laborables', delivery: 'Ejecucion habitual: 2-4 dias laborables', urgent: 'Urgencias: respuesta en 6 h de atencion' },
+    includes: ['Revision mensual completa', '8 cambios pequenos por ciclo', '5 cambios fotograficos por ciclo', 'Atencion de incidencias urgentes', 'Copia de seguridad trimestral', 'Informe mensual', 'Espanol e ingles incluidos'],
   },
   impulso: {
     code: 'impulso',
@@ -25,7 +26,8 @@ const PLAN_CATALOG = {
     response: '24-48 h laborables',
     backupEvery: 3,
     report: ['Solicitudes y cambios realizados', 'Cambios pequenos, medianos y fotograficos', 'Cambios adicionales', 'Incidencias externas gestionadas', 'Contenido desactualizado', 'Sugerencias y proximos pasos'],
-    includes: ['Revision avanzada', '16 cambios pequenos por ciclo', '3 cambios medianos por ciclo', '12 cambios fotograficos por ciclo', '2 incidencias externas', 'Informe ampliado'],
+    timing: { response: '24-48 h laborables', delivery: 'Pequenos y fotos: 1-3 dias laborables', urgent: 'Urgencias: respuesta en 4 h de atencion' },
+    includes: ['Revision avanzada de la web', '16 cambios pequenos por ciclo', '3 cambios medianos por ciclo', '12 cambios fotograficos por ciclo', 'Revision de reservas y plataformas externas', '2 incidencias externas gestionadas', 'Copia trimestral e informe ampliado', 'Espanol e ingles incluidos', 'Atencion prioritaria'],
   },
   premium: {
     code: 'premium',
@@ -38,7 +40,8 @@ const PLAN_CATALOG = {
     response: '12-24 h laborables',
     backupEvery: 1,
     report: ['Tareas, cambios y cuotas', 'Incidencias externas', 'Contenido y sugerencias', 'Revision tecnica, seguridad y rendimiento', 'Notas SEO basicas', 'Estado de copia de seguridad', 'Estado general de la web'],
-    includes: ['Revision Premium', '25 cambios pequenos por ciclo', '5 cambios medianos por ciclo', '1 cambio grande por ciclo', '24 cambios fotograficos por ciclo', 'Soporte prioritario'],
+    timing: { response: '12-24 h laborables', delivery: 'Pequenos y fotos: 1-2 dias laborables', urgent: 'Urgencias: respuesta en 3 h de atencion' },
+    includes: ['Revision Premium de la web', '25 cambios pequenos por ciclo', '5 cambios medianos por ciclo', '1 cambio grande por ciclo', '24 cambios fotograficos por ciclo', 'SEO basico y soporte prioritario', 'Copia mensual e informe Premium', '3 incidencias externas gestionadas', 'Espanol e ingles incluidos'],
   },
   menu: {
     code: 'menu',
@@ -50,8 +53,9 @@ const PLAN_CATALOG = {
     prices: { 1: 169 },
     quotas: { menu_update: 25 },
     response: 'Lunes a viernes',
+    timing: { response: 'Envio antes de las 21:00 del dia anterior', delivery: 'Publicacion antes de las 08:00', urgent: 'Revision y correccion propia incluidas' },
     report: [],
-    includes: ['25 actualizaciones por ciclo', 'Publicacion de lunes a viernes', 'Revision y correccion propia', 'WhatsApp o correo por escrito', 'Sin informe mensual'],
+    includes: ['Hasta 25 actualizaciones por ciclo', 'Publicacion de lunes a viernes, incluidos festivos entre semana', 'Envio antes de las 21:00 y primera version antes de las 22:00', 'Correcciones hasta las 06:45 y publicacion antes de las 08:00', 'Recepcion por WhatsApp o correo, por escrito o fotografia clara', 'Revision basica y correccion de errores propios', 'Sin informe mensual'],
   },
 };
 
@@ -67,6 +71,9 @@ const TASK_TYPES = {
   suggestion: 'Sugerencia de mejora',
   incident: 'Incidencia',
   menu_update: 'Menu Diario',
+  menu_structure: 'Modificacion sencilla de estructura',
+  menu_restructure: 'Reestructuracion completa del menu',
+  menu_other: 'Otros trabajos de Menu Diario',
 };
 
 const BASE_PLAN_CODES = ['presencia', 'impulso', 'premium'];
@@ -76,6 +83,13 @@ const EXTRA_PACKAGES = {
   photos: [{ quantity: 1, price: 12 }, { quantity: 2, price: 22 }, { quantity: 5, price: 50 }, { quantity: 10, price: 90 }, { quantity: 12, price: 105 }],
   medium: [{ quantity: 1, price: 50 }, { quantity: 2, price: 90 }, { quantity: 3, price: 125 }],
   large: [{ quantity: 1, price: 140 }, { quantity: 2, price: 250 }],
+};
+
+const MENU_EXTRA_RULES = {
+  menu_update: { label: 'Publicacion adicional', unit: 'publicacion', price: 10, fixed: true },
+  menu_structure: { label: 'Modificacion sencilla de estructura', unit: 'modificacion', price: 25, fixed: true },
+  menu_restructure: { label: 'Reestructuracion completa', unit: 'proyecto', price: 60, fixed: false },
+  menu_other: { label: 'Otros trabajos', unit: 'hora', price: 40, fixed: true },
 };
 
 const STATUS_LABELS = {
@@ -119,6 +133,13 @@ const app = {
     user: null,
     ready: false,
     mode: 'login',
+  },
+  workspace: {
+    id: '',
+    name: '',
+    workspaces: [],
+    needsSetup: false,
+    accessCheckTimer: null,
   },
   persistence: {
     loading: false,
@@ -235,7 +256,12 @@ function hasSupabaseConfig() {
 }
 
 function storageKey() {
-  return app.auth.user?.id ? `${STORAGE_KEY}_${app.auth.user.id}` : STORAGE_KEY;
+  const suffix = [app.auth.user?.id, app.workspace.id].filter(Boolean).join('_');
+  return suffix ? `${STORAGE_KEY}_${suffix}` : STORAGE_KEY;
+}
+
+function workspaceSelectionKey() {
+  return app.auth.user?.id ? `cuotly_workspace_${app.auth.user.id}` : 'cuotly_workspace';
 }
 
 function getAuthName(user) {
@@ -309,6 +335,103 @@ function showAppShell() {
   $('#appShell')?.classList.remove('hidden');
 }
 
+function renderWorkspaceGate(message = '') {
+  const authScreen = $('#authScreen');
+  $('#appShell')?.classList.add('hidden');
+  authScreen.classList.remove('hidden');
+  const workspaces = app.workspace.workspaces || [];
+  authScreen.innerHTML = `
+    <section class="auth-card workspace-gate">
+      <div class="auth-brand"><span class="brand-mark">Q</span><strong>Cuotly</strong></div>
+      ${message ? `<div class="auth-message">${esc(message)}</div>` : ''}
+      <h1>${workspaces.length ? 'Elige tu espacio' : 'Crea tu espacio de trabajo'}</h1>
+      <p>${workspaces.length ? 'Tu cuenta puede pertenecer a varios espacios de Cuotly. Elige donde quieres trabajar.' : 'No tienes acceso a ningun espacio activo. Puedes crear el tuyo desde aqui.'}</p>
+      ${workspaces.length ? `<div class="workspace-list">${workspaces.map(space => `<button class="secondary-button workspace-choice" data-action="switch-workspace" data-id="${space.id}"><span><strong>${esc(space.name)}</strong><small>${esc(ROLE_LABELS[space.role] || space.role)}</small></span><b>Entrar</b></button>`).join('')}</div>` : ''}
+      <form id="workspaceCreateForm" class="auth-form workspace-create-form">
+        <label>Nombre del nuevo espacio<input name="workspaceName" required placeholder="Ej. Mantenimientos Madrid"></label>
+        <button class="primary-button full-width">Crear espacio</button>
+      </form>
+      <button class="text-button auth-switch" data-action="logout">Cerrar sesion</button>
+    </section>
+  `;
+}
+
+async function createWorkspaceFromForm(form) {
+  const token = await getAccessToken();
+  if (!token) return;
+  const name = new FormData(form).get('workspaceName')?.trim();
+  if (!name) return;
+  const button = form.querySelector('button');
+  button.disabled = true;
+  button.textContent = 'Creando...';
+  try {
+    const response = await fetch('/api/shared-state', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+      body: JSON.stringify({ action: 'create-workspace', name, state: seedState() }),
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result.error || 'No se pudo crear el espacio.');
+    app.workspace.id = result.workspace.id;
+    app.workspace.name = result.workspace.name;
+    app.workspace.workspaces = result.workspaces || [];
+    app.workspace.needsSetup = false;
+    localStorage.setItem(workspaceSelectionKey(), app.workspace.id);
+    app.state = normalizeState(result.state);
+    applyAuthUserToState();
+    showAppShell();
+    app.selectedRestaurantId = null;
+    render();
+    app.booted = true;
+    startWorkspaceAccessCheck();
+    showToast('Espacio de trabajo creado');
+  } catch (error) {
+    renderWorkspaceGate(error.message || 'No se pudo crear el espacio.');
+  }
+}
+
+async function switchWorkspace(id) {
+  if (!id) return;
+  localStorage.setItem(workspaceSelectionKey(), id);
+  app.workspace.id = id;
+  app.workspace.needsSetup = false;
+  app.booted = false;
+  await startApp();
+}
+
+function stopWorkspaceAccessCheck() {
+  if (app.workspace.accessCheckTimer) clearInterval(app.workspace.accessCheckTimer);
+  app.workspace.accessCheckTimer = null;
+}
+
+async function checkWorkspaceAccess() {
+  if (!app.auth.client || !app.auth.user || !app.workspace.id || !app.booted) return;
+  const token = await getAccessToken();
+  if (!token) return;
+  try {
+    const response = await fetch(`/api/shared-state?workspaceId=${encodeURIComponent(app.workspace.id)}`, { headers: { authorization: `Bearer ${token}` } });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok || result.needsSetup || !result.workspace?.id || result.workspace.id !== app.workspace.id) {
+      stopWorkspaceAccessCheck();
+      app.workspace.id = '';
+      app.workspace.name = '';
+      app.workspace.workspaces = result.workspaces || [];
+      app.workspace.needsSetup = true;
+      app.booted = false;
+      app.state = null;
+      renderWorkspaceGate('Tu acceso a este espacio ha terminado. Elige otro espacio o crea uno nuevo.');
+    }
+  } catch {
+    // A temporary network error should never close an active work session.
+  }
+}
+
+function startWorkspaceAccessCheck() {
+  stopWorkspaceAccessCheck();
+  if (!app.auth.client || !app.auth.user || !app.workspace.id) return;
+  app.workspace.accessCheckTimer = setInterval(checkWorkspaceAccess, 15000);
+}
+
 async function setupAuth() {
   if (!hasSupabaseConfig() || !window.supabase?.createClient) {
     app.auth.ready = true;
@@ -325,6 +448,7 @@ async function setupAuth() {
     if (!app.auth.ready) return;
     if (app.auth.user) startApp();
     else {
+      stopWorkspaceAccessCheck();
       app.booted = false;
       app.state = null;
       renderAuthScreen('login');
@@ -384,6 +508,7 @@ async function handleGoogleLogin() {
 }
 
 async function logout() {
+  stopWorkspaceAccessCheck();
   if (!app.auth.client) {
     app.booted = false;
     app.state = null;
@@ -409,28 +534,6 @@ async function getAccessToken() {
   return app.auth.session?.access_token || '';
 }
 
-function sharedStateForMember(member) {
-  const snapshot = JSON.parse(JSON.stringify(app.state || seedState()));
-  snapshot.ownerUserId = snapshot.ownerUserId || app.auth.user?.id || '';
-  snapshot.members ||= [];
-  const existingIndex = snapshot.members.findIndex(item => String(item.email || '').toLowerCase() === member.email.toLowerCase());
-  const memberRecord = {
-    id: member.id,
-    name: member.name,
-    email: member.email,
-    role: member.role,
-    active: true,
-    invitedAt: member.invitedAt || nowIso(),
-    registeredUser: member.registeredUser || false,
-    addedAt: member.addedAt || '',
-    restaurantIds: memberRestaurantIds(member),
-  };
-  if (existingIndex >= 0) snapshot.members[existingIndex] = { ...snapshot.members[existingIndex], ...memberRecord };
-  else snapshot.members.push(memberRecord);
-  snapshot.currentUserId = member.id;
-  return snapshot;
-}
-
 async function sendMemberInvitation(member, mode = 'invite') {
   const token = await getAccessToken();
   if (!token) throw new Error('Tienes que iniciar sesion para invitar miembros.');
@@ -442,11 +545,12 @@ async function sendMemberInvitation(member, mode = 'invite') {
       authorization: `Bearer ${token}`,
     },
     body: JSON.stringify({
+      workspaceId: app.workspace.id,
+      memberId: member.id,
       name: member.name,
       email: member.email,
       role: member.role,
       mode,
-      state: sharedStateForMember(member),
     }),
   });
 
@@ -500,6 +604,64 @@ function canManage() {
   return role === 'owner' || role === 'admin';
 }
 
+function isOwner() {
+  return getCurrentUser()?.role === 'owner';
+}
+
+function canViewPayments() {
+  return isOwner();
+}
+
+function canViewReports() {
+  return canManage();
+}
+
+function canCreateRestaurant() {
+  return isOwner();
+}
+
+function canDeleteRestaurant() {
+  return isOwner();
+}
+
+function canManageMembers() {
+  return isOwner();
+}
+
+function serviceMemberIds(service) {
+  const values = Array.isArray(service?.assignedMemberIds)
+    ? service.assignedMemberIds
+    : (service?.assignedTo ? [service.assignedTo] : []);
+  return [...new Set(values.filter(Boolean))];
+}
+
+function isAssignedToService(service, memberId = app.state.currentUserId) {
+  return serviceMemberIds(service).includes(memberId);
+}
+
+function primaryServiceMemberId(service) {
+  return serviceMemberIds(service)[0] || '';
+}
+
+function canOperateService(service) {
+  if (!service) return false;
+  return canManage() || isAssignedToService(service);
+}
+
+function canCancelService(service) {
+  return Boolean(service) && canManage();
+}
+
+function canManageServiceTeam() {
+  return canManage();
+}
+
+function canSeeTask(task) {
+  const service = app.state.services.find(item => item.id === task?.serviceId);
+  if (!service || !canSeeService(service)) return false;
+  return canManage() || task.assignedTo === app.state.currentUserId;
+}
+
 function memberRestaurantIds(member) {
   return Array.isArray(member?.restaurantIds) ? member.restaurantIds.filter(Boolean) : [];
 }
@@ -510,7 +672,7 @@ function memberCanAccessRestaurant(member, restaurantId) {
   const restaurantIds = memberRestaurantIds(member);
   if (member.role === 'admin' && restaurantIds.length === 0) return true;
   if (restaurantIds.includes(restaurantId)) return true;
-  return app.state.services.some(service => service.restaurantId === restaurantId && service.assignedTo === member.id);
+  return app.state.services.some(service => service.restaurantId === restaurantId && isAssignedToService(service, member.id));
 }
 
 function canSeeRestaurant(restaurantId) {
@@ -521,7 +683,7 @@ function canSeeService(service) {
   const user = getCurrentUser();
   if (!user) return false;
   if (user.role === 'owner' || user.role === 'admin') return memberCanAccessRestaurant(user, service.restaurantId);
-  return service.assignedTo === user.id;
+  return isAssignedToService(service, user.id);
 }
 
 function visibleServices() {
@@ -557,7 +719,7 @@ function eligibleMembersForRestaurant(restaurantId, selectedId = '') {
 }
 
 function tasksForService(serviceId) {
-  return app.state.tasks.filter(task => task.serviceId === serviceId);
+  return app.state.tasks.filter(task => task.serviceId === serviceId && canSeeTask(task));
 }
 
 function daysBetween(start, end) {
@@ -811,6 +973,7 @@ function ensureBackupTask(service) {
 }
 
 function refreshBilling() {
+  if (!canViewPayments()) return;
   const services = app.state.services.filter(service => service.status !== 'cancelled');
   services.forEach(service => {
     initializeServiceCycle(service);
@@ -951,7 +1114,7 @@ function seedState() {
 
 function normalizeState(state) {
   const seeded = seedState();
-  state.version = 5;
+  state.version = 6;
   state.settings = { ...seeded.settings, ...(state.settings || {}) };
   state.members ||= [];
   state.restaurants ||= [];
@@ -960,11 +1123,14 @@ function normalizeState(state) {
   state.payments ||= [];
   state.reports ||= [];
   state.reminders ||= [];
+  state.archivedMembers ||= [];
   state.services.forEach(service => {
     service.initialCommitmentMonths = Number(service.initialCommitmentMonths || 3);
     service.commitmentStartDate ||= service.startDate || iso();
     service.extraCredits ||= [];
     service.pauseHistory ||= [];
+    service.assignedMemberIds = serviceMemberIds(service);
+    service.assignedTo = primaryServiceMemberId(service);
     service.cancelAtEnd = Boolean(service.cancelAtEnd);
     if (service.planCode === 'menu') service.pauseAllowed = false;
     if (service.status === 'late') service.status = 'suspended';
@@ -978,6 +1144,20 @@ function normalizeState(state) {
   });
   state.members.forEach(member => {
     member.restaurantIds = memberRestaurantIds(member);
+    if (member.active === undefined) member.active = true;
+  });
+  state.restaurants.forEach(restaurant => {
+    restaurant.noteEntries ||= [];
+    if (restaurant.notes && !restaurant.noteEntries.length) {
+      restaurant.noteEntries.push({
+        id: uid('note'),
+        text: restaurant.notes,
+        authorId: state.ownerUserId || 'user_owner',
+        authorName: 'Propietario',
+        createdAt: restaurant.createdAt || nowIso(),
+        legacy: true,
+      });
+    }
   });
   return state;
 }
@@ -987,26 +1167,32 @@ async function loadCloudState() {
   const token = await getAccessToken();
   if (token) {
     try {
-      const response = await fetch('/api/shared-state', { headers: { authorization: `Bearer ${token}` } });
+      const preferred = localStorage.getItem(workspaceSelectionKey()) || '';
+      const response = await fetch(`/api/shared-state${preferred ? `?workspaceId=${encodeURIComponent(preferred)}` : ''}`, { headers: { authorization: `Bearer ${token}` } });
+      const result = await response.json().catch(() => ({}));
       if (response.ok) {
-        const result = await response.json();
         app.persistence.cloudAvailable = true;
         app.persistence.lastCloudError = '';
+        app.workspace.id = result.workspace?.id || '';
+        app.workspace.name = result.workspace?.name || '';
+        app.workspace.workspaces = result.workspaces || [];
+        app.workspace.needsSetup = Boolean(result.needsSetup);
+        if (app.workspace.id) localStorage.setItem(workspaceSelectionKey(), app.workspace.id);
         return result.state || null;
+      }
+      if (result.error === 'WORKSPACE_ACCESS_REVOKED') {
+        app.workspace.id = '';
+        app.workspace.name = '';
+        app.workspace.workspaces = result.workspaces || [];
+        app.workspace.needsSetup = true;
+        return null;
       }
     } catch (error) {
       app.persistence.lastCloudError = error.message || 'No se pudo cargar el espacio compartido';
     }
   }
-  const { data, error } = await app.auth.client.from('cuotly_user_states').select('state').eq('user_id', app.auth.user.id).maybeSingle();
-  if (error) {
-    app.persistence.cloudAvailable = false;
-    app.persistence.lastCloudError = error.message || 'No se pudo cargar la nube';
-    return null;
-  }
-  app.persistence.cloudAvailable = true;
-  app.persistence.lastCloudError = '';
-  return data?.state || null;
+  app.persistence.cloudAvailable = false;
+  return null;
 }
 
 async function saveCloudStateNow() {
@@ -1022,32 +1208,31 @@ async function saveCloudStateNow() {
           'content-type': 'application/json',
           authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ state: payload }),
+        body: JSON.stringify({ workspaceId: app.workspace.id, state: payload }),
       });
-      if (response.ok) {
+      const result = await response.json().catch(() => ({}));
+      if (response.ok && !result.needsSetup) {
         app.persistence.cloudAvailable = true;
         app.persistence.lastCloudError = '';
+        return;
+      }
+      if (result.needsSetup || result.error === 'WORKSPACE_ACCESS_REVOKED') {
+        stopWorkspaceAccessCheck();
+        app.workspace.id = '';
+        app.workspace.name = '';
+        app.workspace.workspaces = result.workspaces || [];
+        app.workspace.needsSetup = true;
+        app.booted = false;
+        app.state = null;
+        renderWorkspaceGate('Tu acceso a este espacio ha terminado.');
         return;
       }
     } catch (error) {
       app.persistence.lastCloudError = error.message || 'No se pudo guardar el espacio compartido';
     }
   }
-  const { error } = await app.auth.client
-    .from('cuotly_user_states')
-    .upsert({
-      user_id: app.auth.user.id,
-      state: payload,
-      updated_at: new Date().toISOString(),
-    }, { onConflict: 'user_id' });
-  if (error) {
-    app.persistence.cloudAvailable = false;
-    app.persistence.lastCloudError = error.message || 'No se pudo guardar en la nube';
-    console.warn('Cuotly cloud save failed', error);
-    return;
-  }
-  app.persistence.cloudAvailable = true;
-  app.persistence.lastCloudError = '';
+  app.persistence.cloudAvailable = false;
+  app.persistence.lastCloudError ||= 'No se pudo guardar el espacio compartido';
 }
 
 function scheduleCloudSave() {
@@ -1067,6 +1252,10 @@ async function loadState() {
     refreshBilling();
     app.persistence.loading = false;
     saveState();
+    return;
+  }
+  if (app.auth.client && app.auth.user && app.workspace.needsSetup) {
+    app.persistence.loading = false;
     return;
   }
   const stored = localStorage.getItem(storageKey());
@@ -1154,13 +1343,15 @@ function updateShell() {
   const user = getCurrentUser();
   const restaurants = visibleRestaurants();
   const services = visibleServices();
-  const tasks = app.state.tasks.filter(task => services.some(service => service.id === task.serviceId));
+  const tasks = app.state.tasks.filter(task => services.some(service => service.id === task.serviceId) && canSeeTask(task));
   const pendingTasks = tasks.filter(task => !['completed', 'cancelled'].includes(task.status)).length;
-  const paymentIncidents = app.state.payments.filter(payment => ['late', 'suspended'].includes(payment.status) && services.some(service => service.id === payment.serviceId)).length;
+  const paymentIncidents = canViewPayments() ? app.state.payments.filter(payment => ['late', 'suspended'].includes(payment.status) && services.some(service => service.id === payment.serviceId)).length : 0;
   const alerts = getAlerts();
   $('#navRestaurants').textContent = restaurants.length;
   $('#navTasks').textContent = pendingTasks;
   $('#navPayments').textContent = paymentIncidents;
+  $('#navPayments')?.closest('.nav-item')?.classList.toggle('hidden', !canViewPayments());
+  $('[data-view="informes"]')?.classList.toggle('hidden', !canViewReports());
   $('#alertCount').textContent = alerts.length;
   $('#profileName').textContent = user.name;
   $('#profileRole').textContent = ROLE_LABELS[user.role] || user.role;
@@ -1173,9 +1364,9 @@ function getAlerts() {
   visibleServices().forEach(service => {
     const restaurant = restaurantById(service.restaurantId);
     const payment = app.state.payments.find(item => item.serviceId === service.id && item.cycleStart === iso(serviceCycleStart(service)));
-    if (payment?.status === 'late') alerts.push({ type: 'payment', tone: 'red', title: `${restaurant.name} tiene un pago retrasado`, text: `${plan(service.planCode).name} · vence desde ${formatDate(payment.dueDate, { short: true, year: false })}` });
-    if (service.status === 'suspended') alerts.push({ type: 'payment', tone: 'red', title: `${restaurant.name} esta suspendido`, text: 'No se trabaja hasta confirmar el pago pendiente.' });
-    if (service.status === 'cancelled' && service.cancelReason === 'impago') alerts.push({ type: 'payment', tone: 'red', title: `${restaurant.name} fue cancelado por impago`, text: 'Han pasado 3 dias naturales sin pago.' });
+    if (canViewPayments() && payment?.status === 'late') alerts.push({ type: 'payment', tone: 'red', title: `${restaurant.name} tiene un pago retrasado`, text: `${plan(service.planCode).name} · vence desde ${formatDate(payment.dueDate, { short: true, year: false })}` });
+    if (canViewPayments() && service.status === 'suspended') alerts.push({ type: 'payment', tone: 'red', title: `${restaurant.name} esta suspendido`, text: 'No se trabaja hasta confirmar el pago pendiente.' });
+    if (canViewPayments() && service.status === 'cancelled' && service.cancelReason === 'impago') alerts.push({ type: 'payment', tone: 'red', title: `${restaurant.name} fue cancelado por impago`, text: 'Han pasado 3 dias naturales sin pago.' });
     const notice = cancellationNoticeDate(service);
     const today = parseDate(iso());
     if (notice >= today && notice <= addDays(today, 3)) alerts.push({ type: 'renewal', tone: 'amber', title: `Aviso de cancelacion de ${restaurant.name}`, text: `${plan(service.planCode).name} debe avisar antes del ${formatDate(notice, { short: true })}` });
@@ -1183,7 +1374,7 @@ function getAlerts() {
     if (totals.limit && totals.percent >= 80) alerts.push({ type: 'quota', tone: totals.percent >= 100 ? 'red' : 'amber', title: `${restaurant.name} se acerca al limite`, text: `${plan(service.planCode).name}: ${totals.used}/${totals.limit} consumidos` });
   });
   app.state.tasks
-    .filter(task => task.status === 'waiting' && visibleServices().some(service => service.id === task.serviceId))
+    .filter(task => task.status === 'waiting' && visibleServices().some(service => service.id === task.serviceId) && canSeeTask(task))
     .forEach(task => alerts.push({ type: 'waiting', tone: 'blue', title: `${task.title}`, text: `${restaurantById(task.restaurantId)?.name || 'Restaurante'} espera respuesta del cliente` }));
   return alerts;
 }
@@ -1191,8 +1382,8 @@ function getAlerts() {
 function renderHome() {
   const services = visibleServices();
   const restaurants = visibleRestaurants();
-  const tasks = app.state.tasks.filter(task => services.some(service => service.id === task.serviceId));
-  const currentPayments = app.state.payments.filter(payment => services.some(service => service.id === payment.serviceId) && payment.cycleStart.startsWith(monthKey(new Date())));
+  const tasks = app.state.tasks.filter(task => services.some(service => service.id === task.serviceId) && canSeeTask(task));
+  const currentPayments = canViewPayments() ? app.state.payments.filter(payment => services.some(service => service.id === payment.serviceId) && payment.cycleStart.startsWith(monthKey(new Date()))) : [];
   const activeServices = services.filter(service => service.status !== 'cancelled');
   const received = currentPayments.filter(payment => payment.status === 'paid').reduce((sum, payment) => sum + Number(payment.receivedAmount || 0), 0);
   const expected = currentPayments.reduce((sum, payment) => sum + Number(payment.receivedAmount || 0), 0);
@@ -1202,13 +1393,13 @@ function renderHome() {
   $('#view-inicio').innerHTML = `
     <div class="page-heading">
       <div><p class="eyebrow">${new Intl.DateTimeFormat('es-ES', { weekday: 'long', day: '2-digit', month: 'long' }).format(new Date()).toUpperCase()}</p><h1>Buenos dias, ${esc(getCurrentUser().name.split(' ')[0])}</h1><p>Esto es lo que necesita tu atencion hoy.</p></div>
-      <button class="primary-button" data-action="open-restaurant-modal"><span>＋</span> Anadir restaurante</button>
+      ${canCreateRestaurant() ? '<button class="primary-button" data-action="open-restaurant-modal"><span>＋</span> Anadir restaurante</button>' : ''}
     </div>
     <div class="summary-grid">
-      <article class="summary-card balance-card"><div class="summary-top"><span class="summary-icon mint">€</span><span class="trend up">${Math.round((received / Math.max(expected, 1)) * 100)}%</span></div><p>Cobrado este mes</p><h2>${euro(received)}</h2><small>Neto recibido con IVA e IRPF aplicado</small></article>
+      ${canViewPayments() ? `<article class="summary-card balance-card"><div class="summary-top"><span class="summary-icon mint">€</span><span class="trend up">${Math.round((received / Math.max(expected, 1)) * 100)}%</span></div><p>Cobrado este mes</p><h2>${euro(received)}</h2><small>Neto recibido con IVA e IRPF aplicado</small></article>` : ''}
       <article class="summary-card"><div class="summary-top"><span class="summary-icon blue">▦</span><span class="trend neutral">${activeServices.length} servicios</span></div><p>Restaurantes activos</p><h2>${restaurants.length}</h2><small>${services.filter(s => s.planCode !== 'menu').length} planes web · ${services.filter(s => s.planCode === 'menu').length} Menu Diario</small></article>
       <article class="summary-card"><div class="summary-top"><span class="summary-icon amber">✓</span><span class="trend warning">${pendingTasks.filter(task => task.priority === 'high').length} urgentes</span></div><p>Trabajos pendientes</p><h2>${pendingTasks.length}</h2><small>${tasks.filter(task => task.status === 'completed' && task.completedAt?.startsWith(iso())).length} completados hoy</small></article>
-      <article class="summary-card"><div class="summary-top"><span class="summary-icon rose">!</span><span class="trend danger">Revisar</span></div><p>Pagos con incidencia</p><h2>${incidents.length}</h2><small>${currentPayments.filter(payment => payment.status === 'late').length} retrasados · ${currentPayments.filter(payment => payment.status === 'suspended').length} suspendidos</small></article>
+      ${canViewPayments() ? `<article class="summary-card"><div class="summary-top"><span class="summary-icon rose">!</span><span class="trend danger">Revisar</span></div><p>Pagos con incidencia</p><h2>${incidents.length}</h2><small>${currentPayments.filter(payment => payment.status === 'late').length} retrasados · ${currentPayments.filter(payment => payment.status === 'suspended').length} suspendidos</small></article>` : ''}
     </div>
     <div class="dashboard-grid">
       <section class="panel">
@@ -1237,7 +1428,7 @@ function renderHome() {
 
 function memberLoad(member) {
   const tasks = app.state.tasks.filter(task => task.assignedTo === member.id && !['completed', 'cancelled'].includes(task.status));
-  const services = app.state.services.filter(service => service.assignedTo === member.id && service.status !== 'cancelled');
+  const services = app.state.services.filter(service => isAssignedToService(service, member.id) && service.status !== 'cancelled');
   const percent = Math.min(100, tasks.length * 16 + services.length * 8);
   return `
     <div class="member-load">
@@ -1260,7 +1451,7 @@ function restaurantTable(restaurants) {
           <span class="restaurant-name"><i class="restaurant-logo ${logoClass(restaurant.id)}">${initials(restaurant.name)}</i><span><strong>${esc(restaurant.name)}</strong><small>${esc(restaurant.city || restaurant.address || '')}</small></span></span>
           <span>${services.map(servicePill).join('') || '<i class="status-pill pending">Sin servicio</i>'}</span>
           <span><strong>${renewal}</strong><small>${mainService ? `Avisar ${formatDate(cancellationNoticeDate(mainService), { short: true, year: false })}` : ''}</small></span>
-          <span>${services.map(service => assignedLabel(service.assignedTo)).join('') || '-'}</span>
+          <span>${services.map(service => assignedMembersLabel(service)).join('') || '-'}</span>
           <span>${statusPill(mainService?.status || restaurant.status)}</span>
           <span>→</span>
         </button>
@@ -1294,7 +1485,13 @@ function assignedLabel(memberId) {
   return `<strong class="assigned"><i class="avatar tiny ${member.role === 'admin' ? 'peach' : 'sky'}">${initials(member.name)}</i>${esc(member.name)}</strong>`;
 }
 
-function renderRestaurants() {
+function assignedMembersLabel(service) {
+  const members = serviceMemberIds(service).map(memberById).filter(Boolean);
+  if (!members.length) return '<span class="muted-note">Sin asignar</span>';
+  return `<span class="assigned-member-stack">${members.map(member => `<i class="avatar tiny ${member.role === 'admin' ? 'peach' : member.role === 'owner' ? 'avatar-green' : 'sky'}" title="${esc(member.name)}">${initials(member.name)}</i>`).join('')}<small>${members.map(member => esc(member.name)).join(', ')}</small></span>`;
+}
+
+function renderRestaurantsLegacy() {
   const query = app.search.trim().toLowerCase();
   const restaurants = visibleRestaurants().filter(restaurant => !query || `${restaurant.name} ${restaurant.email} ${restaurant.phone}`.toLowerCase().includes(query));
   $('#view-restaurantes').innerHTML = `
@@ -1307,10 +1504,28 @@ function renderRestaurants() {
   `;
 }
 
+function renderRestaurants() {
+  const query = app.search.trim().toLowerCase();
+  const restaurants = visibleRestaurants().filter(restaurant => !query || `${restaurant.name} ${restaurant.email} ${restaurant.phone}`.toLowerCase().includes(query));
+  const headingActions = canCreateRestaurant() ? '<button class="primary-button" data-action="open-restaurant-modal">+ Anadir restaurante</button>' : '';
+  const toolbarActions = [
+    canManage() ? '<button class="secondary-button" data-action="open-service-modal">+ Anadir servicio</button>' : '',
+    canManage() ? '<button class="secondary-button" data-action="export-restaurants">Exportar</button>' : '',
+  ].join('');
+  const description = canViewPayments()
+    ? 'Ficha completa de planes, Menu Diario, pagos y trabajos.'
+    : 'Ficha de los restaurantes y servicios a los que tienes acceso.';
+  $('#view-restaurantes').innerHTML = `
+    <div class="page-heading compact"><div><p class="eyebrow">CLIENTES</p><h1>Restaurantes</h1><p>${description}</p></div>${headingActions}</div>
+    <div class="toolbar"><label class="filter-search"><span>⌕</span><input value="${esc(app.search)}" data-action="search-input" placeholder="Buscar restaurante..."></label><div class="toolbar-right">${toolbarActions}</div></div>
+    <div class="restaurant-card-grid">${restaurants.map(restaurantCard).join('') || emptyState('□', 'No hay restaurantes', canCreateRestaurant() ? 'Anade el primer cliente para empezar.' : 'Todavia no tienes restaurantes asignados.')}</div>
+  `;
+}
+
 function restaurantCard(restaurant) {
   const services = servicesForRestaurant(restaurant.id);
   const tasks = app.state.tasks.filter(task => task.restaurantId === restaurant.id && !['completed', 'cancelled'].includes(task.status));
-  const paymentIssues = app.state.payments.filter(payment => payment.restaurantId === restaurant.id && ['late', 'suspended'].includes(payment.status));
+  const paymentIssues = canViewPayments() ? app.state.payments.filter(payment => payment.restaurantId === restaurant.id && ['late', 'suspended'].includes(payment.status)) : [];
   const usage = services.reduce((sum, service) => sum + quotaTotals(service).percent, 0) / Math.max(services.length, 1);
   return `
     <article class="restaurant-card ${paymentIssues.length ? 'alert-card' : ''}" data-action="open-restaurant" data-id="${restaurant.id}">
@@ -1321,7 +1536,7 @@ function restaurantCard(restaurant) {
       <div class="card-divider"></div>
       <div class="card-stats">
         <span><small>Trabajos</small><strong>${tasks.length}</strong></span>
-        <span><small>Pago</small><strong>${paymentIssues.length ? 'Revisar' : 'OK'}</strong></span>
+        <span><small>${canViewPayments() ? 'Pago' : 'Acceso'}</small><strong>${canViewPayments() ? (paymentIssues.length ? 'Revisar' : 'OK') : 'Asignado'}</strong></span>
         <span><small>Uso</small><strong>${Math.round(usage)}%</strong></span>
       </div>
       <div class="usage-mini ${usage > 90 ? 'danger-use' : ''}"><span><b>${Math.round(usage)}%</b> de cuotas usadas</span><span class="mini-bar"><i style="width:${Math.min(100, usage)}%"></i></span></div>
@@ -1347,12 +1562,17 @@ function renderRestaurantDetail() {
         <i class="restaurant-logo xl ${logoClass(restaurant.id)}">${initials(restaurant.name)}</i>
         <div><div class="title-with-status"><h1>${esc(restaurant.name)}</h1>${statusPill(restaurant.status)}</div><p>${esc(restaurant.address || '')}</p><div class="contact-line"><span>${esc(restaurant.email || '')}</span><i></i><span>${esc(restaurant.phone || '')}</span></div></div>
       </div>
-      <div class="detail-actions"><button class="secondary-button" data-action="open-restaurant-modal" data-id="${restaurant.id}">Editar ficha</button><button class="primary-button" data-action="open-task-modal" data-restaurant="${restaurant.id}">＋ Nuevo cambio</button></div>
+      <div class="detail-actions">
+        ${canManage() ? `<button class="secondary-button" data-action="open-restaurant-modal" data-id="${restaurant.id}">Editar ficha</button>` : ''}
+        <button class="secondary-button" data-action="open-note-modal" data-id="${restaurant.id}">Añadir nota</button>
+        ${canManage() ? `<button class="secondary-button" data-action="open-service-modal" data-restaurant="${restaurant.id}">Añadir servicio</button>` : ''}
+        <button class="primary-button" data-action="open-task-modal" data-restaurant="${restaurant.id}">＋ Nuevo cambio</button>
+      </div>
     </div>
     <div class="detail-tabs">${tabs.map(tab => `<button class="${app.detailTab === tab ? 'active' : ''}" data-action="detail-tab" data-tab="${tab}">${tabLabel(tab)}</button>`).join('')}</div>
     ${detailTabContent(restaurant, services)}
   `;
-  if (canManage()) {
+  if (canDeleteRestaurant()) {
     $('#view-restaurante-detalle .detail-actions')?.insertAdjacentHTML('beforeend', `<button class="secondary-button danger-outline" data-action="delete-restaurant" data-id="${restaurant.id}">Borrar restaurante</button>`);
   }
 }
@@ -1373,9 +1593,20 @@ function detailTabContent(restaurant, services) {
       <aside class="detail-aside">
         ${renewalPanel(services[0])}
         ${teamPanel(services)}
+        ${restaurantNotesPanel(restaurant)}
         ${reportPanel(restaurant)}
       </aside>
     </div>
+  `;
+}
+
+function restaurantNotesPanelLegacy(restaurant) {
+  const notes = [...(restaurant.noteEntries || [])].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  return `
+    <section class="panel no-shadow">
+      <div class="panel-heading"><h3>Notas internas</h3><button class="icon-button" data-action="open-note-modal" data-id="${restaurant.id}" title="Añadir nota">＋</button></div>
+      <div class="restaurant-notes">${notes.slice(0, 4).map(note => `<article><strong>${esc(note.authorName || memberById(note.authorId)?.name || 'Miembro')}</strong><small>${formatDateTime(note.createdAt)}</small><p>${esc(note.text)}</p></article>`).join('') || '<p class="settings-copy">Todavía no hay notas internas.</p>'}</div>
+    </section>
   `;
 }
 
@@ -1395,7 +1626,7 @@ function serviceCard(service) {
         <span><small>Precio base</small><strong>${euro(service.monthlyBase)} <i>+ IVA</i></strong></span>
         <span><small>Cobro neto</small><strong>${euro(amounts.received)} <i>IVA ${app.state.settings.ivaRate}% · IRPF ${app.state.settings.irpfRate}%</i></strong></span>
         <span><small>Compromiso</small><strong>3 meses iniciales <i>despues, renovacion mensual</i></strong></span>
-        <span><small>Responsable</small>${assignedLabel(service.assignedTo)}</span>
+        <span><small>Equipo</small>${assignedMembersLabel(service)}</span>
       </div>
       <div class="quota-heading"><h4>${service.planCode === 'menu' ? 'Actualizaciones del ciclo' : 'Cuotas del ciclo actual'}</h4><span>${isServicePaused(service) ? 'Ciclo congelado' : `${formatDate(serviceCycleStart(service), { short: true })} - ${formatDate(serviceCycleEnd(service), { short: true })}`}</span></div>
       <div class="quota-grid">
@@ -1403,7 +1634,10 @@ function serviceCard(service) {
       </div>
       <div class="service-actions">
         <button class="small-button" data-action="open-task-modal" data-restaurant="${service.restaurantId}" data-service="${service.id}" ${service.status !== 'active' ? 'disabled title="El servicio no esta activo"' : ''}>Registrar cambio</button>
-        ${canManage() ? `<button class="small-button" data-action="open-extra-credit-modal" data-id="${service.id}">Añadir credito</button><button class="small-button" data-action="open-service-modal" data-id="${service.id}">Editar servicio</button>${service.planCode !== 'menu' ? `<button class="small-button" data-action="open-plan-change-modal" data-id="${service.id}">Cambiar plan</button>` : ''}${service.planCode !== 'menu' ? `<button class="small-button" data-action="${isServicePaused(service) ? 'resume-service' : 'open-pause-modal'}" data-id="${service.id}">${isServicePaused(service) ? 'Reanudar' : 'Pausar'}</button>` : ''}<button class="small-button danger-text" data-action="cancel-service" data-id="${service.id}">Cancelar</button>` : ''}
+        ${isOwner() ? `<button class="small-button" data-action="open-extra-credit-modal" data-id="${service.id}">Añadir credito</button>` : ''}
+        ${canManage() ? `<button class="small-button" data-action="open-service-modal" data-id="${service.id}">Editar servicio</button>` : ''}
+        ${canOperateService(service) && service.planCode !== 'menu' ? `<button class="small-button" data-action="open-plan-change-modal" data-id="${service.id}">Cambiar plan</button><button class="small-button" data-action="${isServicePaused(service) ? 'resume-service' : 'open-pause-modal'}" data-id="${service.id}">${isServicePaused(service) ? 'Reanudar' : 'Pausar'}</button>` : ''}
+        ${canCancelService(service) ? `<button class="small-button danger-text" data-action="cancel-service" data-id="${service.id}">Cancelar</button>` : ''}
       </div>
       <div class="service-note">Uso total: ${totals.used}/${totals.limit} (${totals.percent}%). ${restaurant ? esc(restaurant.name) : ''}</div>
     </section>
@@ -1432,7 +1666,7 @@ function renewalPanel(service) {
       <div class="date-block"><strong>${String(end.getDate()).padStart(2, '0')}</strong><span>${new Intl.DateTimeFormat('es-ES', { month: 'short' }).format(end).toUpperCase()}<br>${end.getFullYear()}</span></div>
       <p>${isServicePaused(service) ? 'Servicio pausado: se conserva el tiempo y las cuotas restantes.' : service.cancelAtEnd ? 'Cancelacion programada al terminar este ciclo.' : 'Renueva automaticamente cada mes.'}</p>
       <div class="renewal-warning">Avisar antes del ${formatDate(notice, { short: true })} para cancelar.</div>
-      <button class="secondary-button full-width" data-action="open-service-modal" data-id="${service.id}">Gestionar renovacion</button>
+      ${canManage() ? `<button class="secondary-button full-width" data-action="open-service-modal" data-id="${service.id}">Gestionar renovacion</button>` : ''}
     </section>
   `;
 }
@@ -1440,16 +1674,17 @@ function renewalPanel(service) {
 function teamPanel(services) {
   return `
     <section class="panel no-shadow">
-      <div class="panel-heading"><h3>Equipo asignado</h3>${canManage() ? '<button class="icon-button" data-action="open-service-modal">＋</button>' : ''}</div>
+      <div class="panel-heading"><h3>Equipo asignado</h3></div>
       ${services.map(service => {
-        const member = memberById(service.assignedTo);
-        return `<div class="assigned-member"><span class="avatar ${member?.role === 'admin' ? 'peach' : 'sky'}">${initials(member?.name)}</span><div><strong>${esc(member?.name || 'Sin asignar')}</strong><small>${esc(plan(service.planCode).name)} · Responsable</small></div><button class="icon-button" data-action="open-service-modal" data-id="${service.id}">⋮</button></div>`;
+        const members = serviceMemberIds(service).map(memberById).filter(Boolean);
+        return `<div class="team-service-row"><div><strong>${esc(plan(service.planCode).name)}</strong><small>${members.length ? `${members.length} persona(s) asignada(s)` : 'Sin asignar'}</small></div>${canManageServiceTeam() ? `<button class="icon-button" data-action="open-service-team-modal" data-id="${service.id}" title="Asignar equipo">＋</button>` : ''}</div><div class="assigned-member-list">${members.map(member => `<div class="assigned-member"><span class="avatar ${member.role === 'admin' ? 'peach' : member.role === 'owner' ? 'avatar-green' : 'sky'}">${initials(member.name)}</span><div><strong>${esc(member.name)}</strong><small>${esc(ROLE_LABELS[member.role])}</small></div></div>`).join('') || '<div class="assigned-member"><div><strong>Sin responsables</strong><small>Asigna miembros de tu equipo a este servicio.</small></div></div>'}</div>`;
       }).join('') || '<div class="assigned-member"><div><strong>Sin responsables</strong><small>Anade un servicio para asignar equipo.</small></div></div>'}
     </section>
   `;
 }
 
 function reportPanel(restaurant) {
+  if (!canViewReports()) return '';
   const hasBasePlan = app.state.services.some(service => service.restaurantId === restaurant.id && BASE_PLAN_CODES.includes(service.planCode));
   if (!hasBasePlan) return `
     <section class="panel no-shadow">
@@ -1473,7 +1708,7 @@ function reportPanel(restaurant) {
 
 function restaurantTasksTab(restaurant, services) {
   const serviceIds = new Set(services.map(service => service.id));
-  const tasks = app.state.tasks.filter(task => serviceIds.has(task.serviceId)).sort((a, b) => new Date(b.requestedAt) - new Date(a.requestedAt));
+  const tasks = app.state.tasks.filter(task => serviceIds.has(task.serviceId) && canSeeTask(task)).sort((a, b) => new Date(b.requestedAt) - new Date(a.requestedAt));
   const columns = [
     ['requested', 'Solicitados'],
     ['assigned', 'Asignados'],
@@ -1529,7 +1764,7 @@ function lastMonths(amount) {
 
 function timelineRow(task) {
   const service = app.state.services.find(item => item.id === task.serviceId);
-  const canDeleteTask = canManage() || task.assignedTo === app.state.currentUserId;
+  const canDeleteTask = canSeeTask(task);
   return `
     <div class="timeline-row">
       <span class="${task.status === 'completed' ? 'timeline-check' : 'timeline-wait'}">${task.status === 'completed' ? '✓' : '◷'}</span>
@@ -1541,7 +1776,7 @@ function timelineRow(task) {
 
 function renderTasks() {
   const services = visibleServices();
-  let tasks = app.state.tasks.filter(task => services.some(service => service.id === task.serviceId));
+  let tasks = app.state.tasks.filter(task => services.some(service => service.id === task.serviceId) && canSeeTask(task));
   if (app.taskFilter === 'mine') tasks = tasks.filter(task => task.assignedTo === app.state.currentUserId);
   if (app.taskFilter === 'urgent') tasks = tasks.filter(task => task.priority === 'high');
   const columns = [
@@ -1578,13 +1813,13 @@ function taskCard(task) {
   const service = app.state.services.find(item => item.id === task.serviceId);
   const member = memberById(task.assignedTo);
   const nextAction = task.status === 'requested' || task.status === 'assigned' ? 'start-task' : task.status === 'in_progress' || task.status === 'waiting' ? 'complete-task' : '';
-  const canDeleteTask = canManage() || task.assignedTo === app.state.currentUserId;
+  const canDeleteTask = canSeeTask(task);
   return `
     <article class="task-card ${task.priority === 'high' ? 'urgent' : ''} ${task.status === 'waiting' ? 'waiting' : ''} ${task.status === 'completed' ? 'done' : ''}">
       <div><span class="task-type ${plan(service?.planCode).className}">${esc(taskTypeLabel(task.type))} ×${Number(task.quantity || 1)}</span><button data-action="open-task-modal" data-id="${task.id}">⋮</button></div>
       <h4>${esc(task.title)}</h4>
       <p>${esc(restaurant?.name || '')} · ${esc(plan(service?.planCode).name)}</p>
-      <div class="task-footer"><span class="avatar tiny ${member?.role === 'admin' ? 'peach' : 'sky'}">${initials(member?.name || '?')}</span><time>${formatDateTime(task.completedAt || task.startedAt || task.requestedAt)}</time></div>
+      <div class="task-footer"><span class="avatar tiny ${member?.role === 'admin' ? 'peach' : 'sky'}" title="${esc(member?.name || task.assignedName || 'Sin responsable')}">${initials(member?.name || task.assignedName || '?')}</span><time>${formatDateTime(task.completedAt || task.startedAt || task.requestedAt)}</time></div>
       <div class="task-actions">
         ${nextAction ? `<button class="small-button" data-action="${nextAction}" data-id="${task.id}">${nextAction === 'start-task' ? 'Empezar' : 'Completar'}</button>` : ''}
         ${task.status !== 'completed' && task.status !== 'cancelled' ? `<button class="small-button" data-action="wait-task" data-id="${task.id}">Esperar</button>` : ''}
@@ -1625,13 +1860,13 @@ function calendarEvents(monthStart, monthEnd) {
     const payment = app.state.payments.find(item => item.serviceId === service.id && item.cycleStart === iso(serviceCycleStart(service)));
     if (renewal >= monthStart && renewal <= monthEnd) events.push({ date: renewal, tone: 'green', title: `Renovacion ${restaurant?.name}`, text: plan(service.planCode).name, kind: 'renew' });
     if (notice >= monthStart && notice <= monthEnd) events.push({ date: notice, tone: 'amber', title: `Limite cancelacion`, text: `${restaurant?.name} · ${plan(service.planCode).name}`, kind: 'notice' });
-    if (payment) {
+    if (payment && canViewPayments()) {
       const due = parseDate(payment.dueDate);
       if (due >= monthStart && due <= monthEnd) events.push({ date: due, tone: payment.status === 'paid' ? 'green' : payment.status === 'late' ? 'amber' : 'blue', title: `Cobro ${restaurant?.name}`, text: `${euro(payment.invoiceTotal)} factura · ${euro(payment.receivedAmount)} neto`, kind: 'payment' });
     }
   });
   app.state.tasks
-    .filter(task => visibleServices().some(service => service.id === task.serviceId))
+    .filter(task => visibleServices().some(service => service.id === task.serviceId) && canSeeTask(task))
     .forEach(task => {
       const date = new Date(task.requestedAt);
       if (date >= monthStart && date <= monthEnd) events.push({ date, tone: task.priority === 'high' ? 'amber' : 'blue', title: task.title, text: restaurantById(task.restaurantId)?.name || '', kind: 'task' });
@@ -1648,6 +1883,10 @@ function calendarDay(day, monthStart, events) {
 }
 
 function renderPayments() {
+  if (!canViewPayments()) {
+    $('#view-pagos').innerHTML = emptyState('€', 'Acceso restringido', 'Solo el propietario puede consultar y confirmar pagos.');
+    return;
+  }
   const services = visibleServices();
   let payments = app.state.payments.filter(payment => services.some(service => service.id === payment.serviceId));
   if (app.paymentFilter !== 'all') payments = payments.filter(payment => payment.status === app.paymentFilter);
@@ -1685,6 +1924,10 @@ function paymentTable(payments) {
 }
 
 function renderReports() {
+  if (!canViewReports()) {
+    $('#view-informes').innerHTML = emptyState('PDF', 'Acceso restringido', 'Los informes los consultan el propietario y los administradores.');
+    return;
+  }
   const restaurants = visibleRestaurants();
   let reports = app.state.reports.filter(report => restaurants.some(restaurant => restaurant.id === report.restaurantId));
   if (app.reportFilter !== 'all') reports = reports.filter(report => report.restaurantId === app.reportFilter);
@@ -1708,16 +1951,20 @@ function reportCard(report) {
 }
 
 function renderTeam() {
+  const current = getCurrentUser();
+  const members = current.role === 'worker'
+    ? app.state.members.filter(member => member.active && (member.role === 'owner' || member.id === current.id))
+    : app.state.members.filter(member => member.active);
   $('#view-equipo').innerHTML = `
-    <div class="page-heading compact"><div><p class="eyebrow">PERSONAS Y PERMISOS</p><h1>Equipo</h1><p>El propietario y administradores gestionan miembros y asignaciones.</p></div>${canManage() ? '<button class="primary-button" data-action="open-member-modal">＋ Invitar miembro</button>' : ''}</div>
-    <div class="team-grid">${app.state.members.filter(member => member.active).map(teamCard).join('')}</div>
+    <div class="page-heading compact"><div><p class="eyebrow">PERSONAS Y PERMISOS</p><h1>Equipo</h1><p>${isOwner() ? 'Gestiona altas, accesos y asignaciones.' : current.role === 'admin' ? 'Consulta el equipo y asigna personas desde cada servicio.' : 'Solo ves al propietario y tu propia ficha.'}</p></div>${canManageMembers() ? '<button class="primary-button" data-action="open-member-modal">＋ Invitar miembro</button>' : ''}</div>
+    <div class="team-grid">${members.map(teamCard).join('')}</div>
   `;
 }
 
 function teamCard(member) {
-  const services = app.state.services.filter(service => service.assignedTo === member.id && service.status !== 'cancelled');
+  const services = app.state.services.filter(service => isAssignedToService(service, member.id) && service.status !== 'cancelled');
   const tasks = app.state.tasks.filter(task => task.assignedTo === member.id && !['completed', 'cancelled'].includes(task.status));
-  const canRemove = canManage() && member.role !== 'owner' && member.id !== app.state.currentUserId;
+  const canRemove = canManageMembers() && member.role !== 'owner' && member.id !== app.state.currentUserId;
   const restaurantIds = memberRestaurantIds(member);
   const restaurantScope = member.role === 'owner'
     ? 'Todos los restaurantes'
@@ -1732,20 +1979,28 @@ function teamCard(member) {
       ${member.registeredUser ? '<p><small>Usuario ya registrado</small></p>' : ''}
       <p><small>Acceso: ${esc(restaurantScope)}</small></p>
       <div class="team-stats"><span><strong>${services.length}</strong>Servicios</span><span><strong>${tasks.length}</strong>Pendientes</span></div>
-      <button class="secondary-button full-width" data-action="open-member-modal" data-id="${member.id}">Gestionar permisos</button>
+      ${canManageMembers() ? `<button class="secondary-button full-width" data-action="open-member-modal" data-id="${member.id}">Gestionar permisos</button>` : ''}
       ${canRemove ? `<button class="secondary-button full-width danger-outline" data-action="remove-member" data-id="${member.id}">Expulsar miembro</button>` : ''}
     </article>
   `;
 }
 
-function renderPlans() {
+function renderPlansLegacy() {
   $('#view-planes').innerHTML = `
     <div class="page-heading compact"><div><p class="eyebrow">CATALOGO INTERNO</p><h1>Planes y servicios</h1><p>Precios, limites y condiciones configurados en Cuotly.</p></div><button class="secondary-button" data-action="open-settings-prices">Editar impuestos</button></div>
     <div class="plan-grid">${Object.values(PLAN_CATALOG).map(planCard).join('')}</div>
   `;
 }
 
+function renderPlans() {
+  $('#view-planes').innerHTML = `
+    <div class="page-heading compact"><div><p class="eyebrow">CATALOGO INTERNO</p><h1>Planes y servicios</h1><p>Precios, limites y condiciones configurados en Cuotly.</p></div>${isOwner() ? '<button class="secondary-button" data-action="open-settings-prices">Editar impuestos</button>' : ''}</div>
+    <div class="plan-grid">${Object.values(PLAN_CATALOG).map(planCard).join('')}</div>
+  `;
+}
+
 function planCard(p) {
+  const timing = p.timing || {};
   return `
     <article class="plan-card ${p.className}-plan ${p.code === 'impulso' ? 'popular' : ''}">
       ${p.code === 'impulso' ? '<span class="popular-tag">MAS CONTRATADO</span>' : ''}
@@ -1753,20 +2008,29 @@ function planCard(p) {
       <h2>${esc(p.name)}</h2>
       <div class="plan-price"><strong>${euro(p.price)}</strong><span>/ mes + IVA</span></div>
       <ul>${p.includes.map(item => `<li>${esc(item)}</li>`).join('')}</ul>
-      <div class="price-matrix"><span><b>Facturacion</b>Mensual · permanencia inicial de 3 meses</span>${p.code === 'menu' ? `<span><b>Con Premium activo</b>${euro(p.premiumPrice)}/mes</span>` : ''}</div>
-      <button class="secondary-button full-width" data-action="open-service-modal" data-plan="${p.code}">Asignar plan</button>
+      <div class="price-matrix">
+        <span><b>Facturacion</b>Mensual · permanencia inicial de 3 meses</span>
+        <span><b>Respuesta</b>${esc(timing.response || p.response)}</span>
+        ${timing.delivery ? `<span><b>Plazo habitual</b>${esc(timing.delivery)}</span>` : ''}
+        ${timing.urgent ? `<span><b>Prioridad</b>${esc(timing.urgent)}</span>` : ''}
+        ${p.code === 'menu' ? `<span><b>Con Premium activo</b>${euro(p.premiumPrice)}/mes</span>` : ''}
+      </div>
+      ${canManage() ? `<button class="secondary-button full-width" data-action="open-service-modal" data-plan="${p.code}">Asignar plan</button>` : ''}
     </article>
   `;
 }
 
 function renderSettings() {
-  const tabs = [
+  const ownerTabs = [
     ['general', 'General'],
     ['calendario', 'Calendario laboral'],
     ['notificaciones', 'Notificaciones'],
     ['seguridad', 'Seguridad y accesos'],
     ['integraciones', 'Integraciones'],
+    ['espacios', 'Espacios de trabajo'],
   ];
+  const tabs = isOwner() ? ownerTabs : [['espacios', 'Espacios de trabajo']];
+  if (!tabs.some(([key]) => key === app.settingsTab)) app.settingsTab = 'espacios';
   $('#view-ajustes').innerHTML = `
     <div class="page-heading compact"><div><p class="eyebrow">CONFIGURACION</p><h1>Ajustes</h1><p>Calendario laboral, avisos, impuestos y preferencias.</p></div></div>
     <div class="settings-layout">
@@ -1778,6 +2042,17 @@ function renderSettings() {
 
 function settingsTabContent() {
   const s = app.state.settings;
+  if (app.settingsTab === 'espacios') {
+    const spaces = app.workspace.workspaces || [];
+    const inactive = app.state.members.filter(member => member.active === false && member.role !== 'owner');
+    return `
+      <h2>Espacios de trabajo</h2>
+      <p class="settings-copy">Puedes usar la misma cuenta en varios espacios de Cuotly. Cada espacio conserva sus restaurantes, planes y equipo por separado.</p>
+      <div class="workspace-list settings-workspaces">${spaces.map(space => `<button class="secondary-button workspace-choice ${space.id === app.workspace.id ? 'active-space' : ''}" data-action="switch-workspace" data-id="${space.id}"><span><strong>${esc(space.name)}</strong><small>${esc(ROLE_LABELS[space.role] || space.role)}</small></span><b>${space.id === app.workspace.id ? 'Actual' : 'Abrir'}</b></button>`).join('')}</div>
+      <form id="workspaceCreateForm" class="settings-danger"><label>Crear otro espacio<input name="workspaceName" required placeholder="Nombre del nuevo espacio"></label><button class="secondary-button">Crear espacio</button></form>
+      ${isOwner() ? `<div class="settings-danger"><h2>Miembros anteriores</h2><p class="settings-copy">Los expulsados no tienen acceso. Puedes reactivarlos conservando sus asignaciones o eliminarlos definitivamente.</p>${inactive.length ? `<div class="former-members">${inactive.map(member => `<article><div><strong>${esc(member.name)}</strong><small>${esc(member.email)}${member.removedAt ? ` · Expulsado ${formatDateTime(member.removedAt)}` : ''}</small></div><div class="row-actions"><button class="small-button" data-action="restore-member" data-id="${member.id}">Reactivar</button><button class="small-button danger-text" data-action="purge-member" data-id="${member.id}">Eliminar</button></div></article>`).join('')}</div>` : '<p class="muted-note">No hay miembros anteriores.</p>'}</div>` : ''}
+    `;
+  }
   if (app.settingsTab === 'calendario') {
     return `
       <h2>Calendario laboral de Madrid</h2>
@@ -1803,7 +2078,7 @@ function settingsTabContent() {
       <h2>Seguridad y accesos</h2>
       <p class="settings-copy">Cuotly usara las mismas cuentas que Fiometra cuando se publique con Supabase. El propietario siempre conserva el control total.</p>
       <div class="access-preview">${app.state.members.map(member => `<div><span class="avatar tiny ${member.role === 'owner' ? 'avatar-green' : 'sky'}">${initials(member.name)}</span><strong>${esc(member.name)}</strong><small>${ROLE_LABELS[member.role]}</small></div>`).join('')}</div>
-      <button class="secondary-button" data-action="open-member-modal">Gestionar equipo</button>
+      ${isOwner() ? '<button class="secondary-button" data-action="open-member-modal">Gestionar equipo</button>' : ''}
     `;
   }
   if (app.settingsTab === 'integraciones') {
@@ -1824,7 +2099,6 @@ function settingsTabContent() {
       <label>IRPF (%)<input name="irpfRate" type="number" min="0" step="0.01" value="${s.irpfRate}"></label>
       <button class="primary-button">Guardar cambios</button>
     </form>
-    <div class="settings-danger"><button class="secondary-button danger-outline" data-action="reset-demo">Reiniciar datos</button></div>
   `;
 }
 
@@ -1853,6 +2127,7 @@ function modalFrame(title, eyebrow, body, sizeClass = '') {
 }
 
 function openRestaurantModal(id) {
+  if (!canManage()) return;
   const restaurant = restaurantById(id) || {};
   const isEdit = Boolean(restaurant.id);
   openModal(modalFrame(isEdit ? 'Editar restaurante' : 'Anadir restaurante', 'CLIENTE', `
@@ -1871,7 +2146,88 @@ function openRestaurantModal(id) {
   `));
 }
 
+function openNoteModalLegacy(id) {
+  const restaurant = restaurantById(id);
+  if (!restaurant || !canSeeRestaurant(id)) return;
+  openModal(modalFrame('Añadir nota interna', 'RESTAURANTE', `
+    <form id="restaurantNoteForm" data-id="${restaurant.id}">
+      <div class="form-grid"><label class="wide">Nota<textarea name="text" required placeholder="Información útil para el equipo, contexto del cliente o seguimiento..."></textarea></label></div>
+      <div class="modal-actions"><button type="button" class="secondary-button" data-action="close-modal">Cancelar</button><button class="primary-button">Guardar nota</button></div>
+    </form>
+  `));
+}
+
+function handleRestaurantNoteSubmitLegacy(form) {
+  const restaurant = restaurantById(form.dataset.id);
+  const text = String(new FormData(form).get('text') || '').trim();
+  if (!restaurant || !text || !canSeeRestaurant(restaurant.id)) return;
+  const user = getCurrentUser();
+  restaurant.noteEntries ||= [];
+  restaurant.noteEntries.push({ id: uid('note'), text, authorId: user.id, authorName: user.name, createdAt: nowIso() });
+  closeModal();
+  showToast('Nota compartida con el equipo');
+  render();
+}
+
+function restaurantNotesPanel(restaurant) {
+  const notes = [...(restaurant.noteEntries || [])].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  const cards = notes.slice(0, 4).map(note => {
+    const canEdit = canManage() || note.authorId === app.state.currentUserId;
+    return `<article><div class="note-meta"><div><strong>${esc(note.authorName || memberById(note.authorId)?.name || 'Miembro')}</strong><small>${formatDateTime(note.createdAt)}${note.updatedAt ? ' · editada' : ''}</small></div>${canEdit ? `<button class="text-button" data-action="open-note-modal" data-id="${restaurant.id}" data-note="${note.id}">Editar</button>` : ''}</div><p>${esc(note.text)}</p></article>`;
+  }).join('');
+  return `
+    <section class="panel no-shadow">
+      <div class="panel-heading"><h3>Notas internas</h3><button class="icon-button" data-action="open-note-modal" data-id="${restaurant.id}" title="Anadir nota">+</button></div>
+      <div class="restaurant-notes">${cards || '<p class="settings-copy">Todavia no hay notas internas.</p>'}</div>
+    </section>
+  `;
+}
+
+function openNoteModal(id, noteId = '') {
+  const restaurant = restaurantById(id);
+  const note = (restaurant?.noteEntries || []).find(item => item.id === noteId);
+  if (!restaurant || !canSeeRestaurant(id)) return;
+  if (note && !canManage() && note.authorId !== app.state.currentUserId) {
+    showToast('Solo puedes editar tus propias notas.');
+    return;
+  }
+  const isEdit = Boolean(note);
+  openModal(modalFrame(isEdit ? 'Editar nota interna' : 'Anadir nota interna', 'RESTAURANTE', `
+    <form id="restaurantNoteForm" data-id="${restaurant.id}" data-note="${note?.id || ''}">
+      <div class="form-grid"><label class="wide">Nota<textarea name="text" required placeholder="Informacion para el equipo, contexto del cliente o seguimiento...">${esc(note?.text || '')}</textarea></label></div>
+      <div class="modal-actions"><button type="button" class="secondary-button" data-action="close-modal">Cancelar</button><button class="primary-button">${isEdit ? 'Guardar cambios' : 'Guardar nota'}</button></div>
+    </form>
+  `));
+}
+
+function handleRestaurantNoteSubmit(form) {
+  const restaurant = restaurantById(form.dataset.id);
+  const text = String(new FormData(form).get('text') || '').trim();
+  const noteId = form.dataset.note || '';
+  if (!restaurant || !text || !canSeeRestaurant(restaurant.id)) return;
+  const user = getCurrentUser();
+  restaurant.noteEntries ||= [];
+  const existing = restaurant.noteEntries.find(note => note.id === noteId);
+  if (existing) {
+    if (!canManage() && existing.authorId !== user.id) {
+      showToast('Solo puedes editar tus propias notas.');
+      return;
+    }
+    existing.text = text;
+    existing.updatedAt = nowIso();
+  } else {
+    restaurant.noteEntries.push({ id: uid('note'), text, authorId: user.id, authorName: user.name, createdAt: nowIso() });
+  }
+  closeModal();
+  showToast(existing ? 'Nota actualizada' : 'Nota compartida con el equipo');
+  render();
+}
+
 function openServiceModal(id, defaults = {}) {
+  if (!canManage()) {
+    showToast('Solo el propietario o un administrador puede crear y editar servicios.');
+    return;
+  }
   const service = app.state.services.find(item => item.id === id) || {};
   const isEdit = Boolean(service.id);
   const restaurantId = service.restaurantId || defaults.restaurantId || app.selectedRestaurantId || app.state.restaurants[0]?.id || '';
@@ -1889,9 +2245,9 @@ function openServiceModal(id, defaults = {}) {
         <label class="wide">Restaurante<select name="restaurantId" required>${restaurantOptions.map(item => `<option value="${item.id}" ${item.id === restaurantId ? 'selected' : ''}>${esc(item.name)}</option>`).join('')}</select></label>
         <label>Servicio<select name="planCode" required>${selectablePlans.map(p => `<option value="${p.code}" ${p.code === planCode ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select></label>
         <label>Condiciones<input value="3 meses iniciales · renovacion mensual" disabled></label>
-        <label>Fecha de inicio<input name="startDate" type="date" value="${service.startDate || iso()}"></label>
+        <label class="date-field">Fecha de inicio<input name="startDate" type="date" value="${service.startDate || iso()}"></label>
         <label>Precio base mensual<input name="monthlyBase" type="number" min="0" step="0.01" value="${service.monthlyBase || serviceMonthlyBase(planCode, 1, restaurantId)}"></label>
-        <label>Responsable<select name="assignedTo">${app.state.members.filter(m => m.active).map(member => `<option value="${member.id}" ${member.id === (service.assignedTo || app.state.currentUserId) ? 'selected' : ''}>${esc(member.name)} · ${ROLE_LABELS[member.role]}</option>`).join('')}</select></label>
+        <div class="wide assignment-box"><div class="assignment-title"><strong>Equipo responsable</strong><small>Puedes asignar varias personas al mismo servicio. Las tareas se repartirán solo entre ellas.</small></div><div class="check-grid">${app.state.members.filter(m => m.active).map(member => `<label class="check-card"><input type="checkbox" name="assignedMemberIds" value="${member.id}" ${serviceMemberIds(service).includes(member.id) || (!isEdit && member.id === app.state.currentUserId) ? 'checked' : ''}><span><strong>${esc(member.name)}</strong><small>${esc(ROLE_LABELS[member.role])}</small></span></label>`).join('')}</div></div>
         <label class="toggle-row wide"><span><strong>Renovacion automatica mensual</strong><small>El primer cobro debe confirmarse antes de activar el servicio.</small></span><input name="autoRenew" type="checkbox" checked disabled></label>
       </div>
       <div class="modal-actions"><button type="button" class="secondary-button" data-action="close-modal">Cancelar</button><button class="primary-button">${isEdit ? 'Guardar servicio' : 'Crear servicio'}</button></div>
@@ -1899,9 +2255,31 @@ function openServiceModal(id, defaults = {}) {
   `));
 }
 
+function openServiceTeamModal(id) {
+  const service = app.state.services.find(item => item.id === id);
+  if (!service || !canManageServiceTeam()) return;
+  const assigned = serviceMemberIds(service);
+  const members = app.state.members.filter(member => member.active);
+  openModal(modalFrame('Asignar equipo', 'EQUIPO DEL SERVICIO', `
+    <form id="serviceTeamForm" data-id="${service.id}">
+      <div class="modal-list">
+        <p class="muted-note">${esc(plan(service.planCode).name)} · ${esc(restaurantById(service.restaurantId)?.name || '')}</p>
+        ${members.map(member => `<label class="check-card"><input type="checkbox" name="assignedMemberIds" value="${member.id}" ${assigned.includes(member.id) ? 'checked' : ''}><span><strong>${esc(member.name)}</strong><small>${esc(ROLE_LABELS[member.role])}</small></span></label>`).join('')}
+      </div>
+      <div class="modal-actions"><button type="button" class="secondary-button" data-action="close-modal">Cancelar</button><button class="primary-button">Guardar equipo</button></div>
+    </form>
+  `));
+}
+
 function taskTypesForService(service) {
   if (!service) return TASK_TYPES;
-  if (service.planCode === 'menu') return { menu_update: TASK_TYPES.menu_update, incident: TASK_TYPES.incident };
+  if (service.planCode === 'menu') return {
+    menu_update: TASK_TYPES.menu_update,
+    menu_structure: TASK_TYPES.menu_structure,
+    menu_restructure: TASK_TYPES.menu_restructure,
+    menu_other: TASK_TYPES.menu_other,
+    incident: TASK_TYPES.incident,
+  };
   const types = {
     small: TASK_TYPES.small,
     medium: TASK_TYPES.medium,
@@ -1925,22 +2303,52 @@ function extraPackageSummary(service) {
 
 function openExtraCreditModal(id) {
   const service = app.state.services.find(item => item.id === id);
-  if (!service || !canManage()) return;
+  if (!service || !isOwner()) return;
   const isMenu = service.planCode === 'menu';
-  const available = isMenu ? [['menu_update', 'Publicacion adicional']] : BASE_QUOTA_TYPES.map(type => [type, taskTypeLabel(type)]);
-  openModal(modalFrame(isMenu ? 'Añadir publicacion adicional' : 'Añadir creditos adicionales', 'SERVICIO EXTRA', `
+  const available = isMenu
+    ? Object.entries(MENU_EXTRA_RULES).map(([key, rule]) => [key, `${rule.label} · ${rule.fixed ? `${euro(rule.price)}/${rule.unit}` : `desde ${euro(rule.price)}`}`])
+    : BASE_QUOTA_TYPES.map(type => [type, taskTypeLabel(type)]);
+  openModal(modalFrame(isMenu ? 'Servicio adicional' : 'Creditos adicionales', 'SERVICIO EXTRA', `
     <form id="extraCreditForm" data-id="${service.id}">
       <div class="form-grid">
-        <label>Tipo<select name="type">${available.map(([key, label]) => `<option value="${key}">${esc(label)}</option>`).join('')}</select></label>
-        <label>Cantidad<input name="quantity" type="number" min="1" value="1" required></label>
-        <label>Importe base sin IVA<input name="price" type="number" min="0" step="0.01" value="${isMenu ? '' : '15'}" placeholder="Presupuesto"></label>
+        <label>Tipo<select name="type" id="extraCreditType">${available.map(([key, label]) => `<option value="${key}">${esc(label)}</option>`).join('')}</select></label>
+        <label id="extraCreditQuantityLabel">Cantidad<input id="extraCreditQuantity" name="quantity" type="number" min="1" value="1" required></label>
+        <label>Importe base sin IVA<input id="extraCreditPrice" name="price" type="number" min="0" step="0.01" value="${isMenu ? '10' : '15'}" placeholder="Presupuesto"></label>
         <label>Estado<select name="status"><option value="pending">Pendiente de pago</option><option value="paid">Aprobado y pagado</option></select></label>
         <label class="wide">Detalle / presupuesto<textarea name="notes" placeholder="Paquete elegido, aprobacion del cliente o condicion especial..."></textarea></label>
       </div>
-      <p class="muted-note">${isMenu ? 'La publicacion extra se presupuesta y solo aumenta la cuota cuando la marques como pagada.' : 'Paquetes vigentes: pequeños 1/2/5/10 (15/25/55/95 €), fotos 1/2/5/10/12 (12/22/50/90/105 €), medianos 1/2/3 (50/90/125 €) y grandes 1/2 (140/250 €). El credito se suma solo al confirmar el pago.'}</p>
+      <p class="muted-note" id="extraCreditPriceHint">${isMenu ? 'Los servicios adicionales se registran y facturan por separado. Solo las publicaciones adicionales aumentan la cuota al marcarse como pagadas.' : 'Paquetes vigentes: pequeños 1/2/5/10 (15/25/55/95 €), fotos 1/2/5/10/12 (12/22/50/90/105 €), medianos 1/2/3 (50/90/125 €) y grandes 1/2 (140/250 €). El credito se suma solo al confirmar el pago.'}</p>
       <div class="modal-actions"><button type="button" class="secondary-button" data-action="close-modal">Cancelar</button><button class="primary-button">Guardar credito</button></div>
     </form>
   `));
+  if (isMenu) setupMenuExtraCreditPricing();
+}
+
+function setupMenuExtraCreditPricing() {
+  const typeInput = $('#extraCreditType');
+  const quantityInput = $('#extraCreditQuantity');
+  const priceInput = $('#extraCreditPrice');
+  const quantityLabel = $('#extraCreditQuantityLabel');
+  const hint = $('#extraCreditPriceHint');
+  if (!typeInput || !quantityInput || !priceInput || !quantityLabel || !hint) return;
+  const update = () => {
+    const rule = MENU_EXTRA_RULES[typeInput.value];
+    if (!rule) return;
+    const isProject = typeInput.value === 'menu_restructure';
+    quantityInput.max = isProject ? '1' : '';
+    if (isProject) quantityInput.value = '1';
+    quantityLabel.firstChild.textContent = rule.unit === 'hora' ? 'Horas ' : 'Cantidad ';
+    priceInput.readOnly = Boolean(rule.fixed);
+    priceInput.min = String(rule.price);
+    if (rule.fixed) priceInput.value = String(round(rule.price * Math.max(1, Number(quantityInput.value || 1))));
+    else if (Number(priceInput.value || 0) < rule.price) priceInput.value = String(rule.price);
+    hint.textContent = rule.fixed
+      ? `${rule.label}: ${euro(rule.price)} por ${rule.unit}. El importe se calcula automaticamente sin IVA.`
+      : `${rule.label}: desde ${euro(rule.price)} sin IVA. Puedes indicar el presupuesto final acordado con el cliente.`;
+  };
+  typeInput.addEventListener('change', update);
+  quantityInput.addEventListener('input', update);
+  update();
 }
 
 function openTaskModal(id, defaults = {}) {
@@ -1950,6 +2358,10 @@ function openTaskModal(id, defaults = {}) {
   const services = servicesForRestaurant(restaurantId);
   const serviceId = task.serviceId || defaults.serviceId || services[0]?.id || visibleServices()[0]?.id || '';
   const activeService = app.state.services.find(service => service.id === serviceId);
+  if (activeService && !canOperateService(activeService)) {
+    showToast('No tienes acceso a ese servicio.');
+    return;
+  }
   const isMenu = activeService?.planCode === 'menu';
   const types = taskTypesForService(activeService);
   openModal(modalFrame(isEdit ? 'Editar cambio' : 'Nuevo cambio', 'TRABAJO', `
@@ -1959,16 +2371,18 @@ function openTaskModal(id, defaults = {}) {
         <label>Servicio<select name="serviceId" required>${visibleServices().filter(service => service.restaurantId === restaurantId || service.id === serviceId).map(service => `<option value="${service.id}" ${service.id === serviceId ? 'selected' : ''}>${esc(plan(service.planCode).name)} · ${esc(restaurantById(service.restaurantId)?.name || '')}</option>`).join('')}</select></label>
         <label>Tipo de trabajo<select name="type">${Object.entries(types).map(([key, label]) => `<option value="${key}" ${key === (task.type || (isMenu ? 'menu_update' : 'small')) ? 'selected' : ''}>${esc(label)}</option>`).join('')}</select></label>
         <label>Cantidad<input name="quantity" type="number" min="1" value="${task.quantity || 1}"></label>
-        <label>Responsable<select name="assignedTo">${app.state.members.filter(m => m.active).map(member => `<option value="${member.id}" ${member.id === (task.assignedTo || getCurrentUser().id) ? 'selected' : ''}>${esc(member.name)}</option>`).join('')}</select></label>
+        <label>Responsable<select name="assignedTo">${(canManage() ? serviceMemberIds(activeService).map(memberById).filter(Boolean) : [getCurrentUser()]).map(member => `<option value="${member.id}" ${member.id === (task.assignedTo || getCurrentUser().id) ? 'selected' : ''}>${esc(member.name)}</option>`).join('')}</select></label>
         <label>Prioridad<select name="priority"><option value="normal" ${task.priority !== 'high' ? 'selected' : ''}>Normal</option><option value="high" ${task.priority === 'high' ? 'selected' : ''}>Urgente</option></select></label>
         <label class="wide">Nombre del cambio<input name="title" required value="${esc(task.title || '')}" placeholder="Ej. Actualizar precios de la carta"></label>
         <label class="wide">Descripcion<textarea name="description" placeholder="Explica que ha solicitado el restaurante...">${esc(task.description || '')}</textarea></label>
         ${isMenu ? `
-          <label>Fecha del menu<input name="menuDate" type="date" value="${esc(task.menuMeta?.menuDate || iso())}"></label>
+          <label class="date-field">Fecha del menu<input name="menuDate" type="date" value="${esc(task.menuMeta?.menuDate || iso())}"></label>
           <label>Informacion recibida<input name="menuReceivedAt" type="datetime-local" value="${esc(task.menuMeta?.receivedAt || '')}"></label>
           <label>Primera version<input name="menuFirstVersionAt" type="datetime-local" value="${esc(task.menuMeta?.firstVersionAt || '')}"></label>
           <label>Correcciones<input name="menuCorrectionsAt" type="datetime-local" value="${esc(task.menuMeta?.correctionsAt || '')}"></label>
-          <label class="wide">Publicacion / incidencias<textarea name="menuNotes" placeholder="Hora de publicacion, retraso o aclaracion necesaria...">${esc(task.menuMeta?.notes || '')}</textarea></label>
+          <label>Publicado a las<input name="menuPublishedAt" type="datetime-local" value="${esc(task.menuMeta?.publishedAt || '')}"></label>
+          <label class="wide">Publicacion / incidencias<textarea name="menuNotes" placeholder="Retraso, incidencia o aclaracion necesaria...">${esc(task.menuMeta?.notes || '')}</textarea></label>
+          <p class="muted-note wide">Horario del servicio: informacion antes de las 21:00 del dia anterior, primera version antes de las 22:00, correcciones hasta las 06:45 y publicacion antes de las 08:00.</p>
         ` : ''}
       </div>
       <div class="modal-actions"><button type="button" class="secondary-button" data-action="close-modal">Cancelar</button><button class="primary-button">${isEdit ? 'Guardar cambio' : 'Crear cambio'}</button></div>
@@ -1977,6 +2391,7 @@ function openTaskModal(id, defaults = {}) {
 }
 
 function openMemberModal(id) {
+  if (!canManageMembers()) return;
   const member = app.state.members.find(item => item.id === id) || {};
   const isEdit = Boolean(member.id);
   const assignedRestaurantIds = memberRestaurantIds(member);
@@ -2002,7 +2417,7 @@ function openMemberModal(id) {
 
 function openPlanChangeModal(id) {
   const service = app.state.services.find(item => item.id === id);
-  if (!service || service.planCode === 'menu') return;
+  if (!service || service.planCode === 'menu' || !canOperateService(service)) return;
   const currentRank = BASE_PLAN_CODES.indexOf(service.planCode);
   openModal(modalFrame('Cambiar plan', 'GESTION DE PLAN', `
     <form id="planChangeForm" data-id="${service.id}">
@@ -2057,6 +2472,7 @@ function handleRestaurantSubmit(form) {
   const data = Object.fromEntries(new FormData(form));
   const id = form.dataset.id || uid('rest');
   const existing = restaurantById(id);
+  if ((!existing && !canCreateRestaurant()) || (existing && !canManage())) return;
   const payload = {
     id,
     name: data.name.trim(),
@@ -2079,7 +2495,9 @@ function handleRestaurantSubmit(form) {
 }
 
 function handleServiceSubmit(form) {
-  const data = Object.fromEntries(new FormData(form));
+  if (!canManage()) return;
+  const formData = new FormData(form);
+  const data = Object.fromEntries(formData);
   const id = form.dataset.id || uid('svc');
   const existing = app.state.services.find(item => item.id === id);
   const existingBasePlan = !existing && data.planCode !== 'menu' ? activeBaseService(data.restaurantId) : null;
@@ -2103,7 +2521,8 @@ function handleServiceSubmit(form) {
     monthlyBase: round(data.monthlyBase || serviceMonthlyBase(data.planCode, 1, data.restaurantId)),
     status: existing?.status || 'pending',
     autoRenew: true,
-    assignedTo: data.assignedTo,
+    assignedMemberIds: formData.getAll('assignedMemberIds').filter(Boolean),
+    assignedTo: '',
     cancelAtEnd: existing?.cancelAtEnd || false,
     createdAt: existing?.createdAt || iso(),
     cycleStartDate: existing?.cycleStartDate || data.startDate || iso(),
@@ -2112,6 +2531,8 @@ function handleServiceSubmit(form) {
     extraCredits: existing?.extraCredits || [],
     pauseHistory: existing?.pauseHistory || [],
   };
+  if (!payload.assignedMemberIds.length) payload.assignedMemberIds = [app.state.currentUserId];
+  payload.assignedTo = payload.assignedMemberIds[0] || '';
   if (existing) Object.assign(existing, payload);
   else app.state.services.push(payload);
   app.selectedRestaurantId = data.restaurantId;
@@ -2121,13 +2542,30 @@ function handleServiceSubmit(form) {
   showView('restaurante-detalle', { restaurantId: data.restaurantId });
 }
 
+function handleServiceTeamSubmit(form) {
+  if (!canManageServiceTeam()) return;
+  const service = app.state.services.find(item => item.id === form.dataset.id);
+  if (!service) return;
+  const ids = new FormData(form).getAll('assignedMemberIds').filter(Boolean);
+  service.assignedMemberIds = [...new Set(ids)];
+  service.assignedTo = service.assignedMemberIds[0] || '';
+  closeModal();
+  showToast('Equipo del servicio actualizado');
+  render();
+}
+
 function handleTaskSubmit(form) {
   const data = Object.fromEntries(new FormData(form));
   const id = form.dataset.id || uid('task');
   const existing = app.state.tasks.find(item => item.id === id);
+  const isEdit = Boolean(existing);
   const service = app.state.services.find(item => item.id === data.serviceId);
   if (!service) {
     showToast('Selecciona un servicio valido.');
+    return;
+  }
+  if (!canOperateService(service)) {
+    showToast('No tienes permiso para registrar cambios en este servicio.');
     return;
   }
   if (!isEdit && service.status !== 'active') {
@@ -2136,6 +2574,7 @@ function handleTaskSubmit(form) {
   }
   const type = data.type;
   const consumesQuota = ['small', 'medium', 'large', 'photos', 'external_incident', 'menu_update'].includes(type);
+  const assignedTo = canManage() ? data.assignedTo : app.state.currentUserId;
   const payload = {
     id,
     restaurantId: service?.restaurantId || data.restaurantId,
@@ -2147,12 +2586,17 @@ function handleTaskSubmit(form) {
     consumesQuota,
     status: existing?.status || 'requested',
     priority: data.priority,
-    assignedTo: data.assignedTo,
+    assignedTo,
+    assignedName: memberById(assignedTo)?.name || existing?.assignedName || '',
     requestedAt: existing?.requestedAt || nowIso(),
     startedAt: existing?.startedAt || '',
     completedAt: existing?.completedAt || '',
     createdBy: existing?.createdBy || app.state.currentUserId,
   };
+  if (!isAssignedToService(service, payload.assignedTo)) {
+    showToast('La tarea debe asignarse a una persona del equipo de ese servicio.');
+    return;
+  }
   if (service.planCode === 'menu') {
     const menuDate = data.menuDate || '';
     const day = menuDate ? parseDate(menuDate).getDay() : 0;
@@ -2167,6 +2611,7 @@ function handleTaskSubmit(form) {
       receivedAt,
       firstVersionAt: data.menuFirstVersionAt || '',
       correctionsAt: data.menuCorrectionsAt || '',
+      publishedAt: data.menuPublishedAt || '',
       notes: data.menuNotes?.trim() || '',
       late: Boolean(cutoff && receivedAt && new Date(receivedAt) > cutoff),
     };
@@ -2181,10 +2626,21 @@ function handleTaskSubmit(form) {
 async function handleExtraCreditSubmit(form) {
   const data = Object.fromEntries(new FormData(form));
   const service = app.state.services.find(item => item.id === form.dataset.id);
-  if (!service || !canManage()) return;
+  if (!service || !isOwner()) return;
   const quantity = Number(data.quantity || 0);
   if (!quantity) {
     showToast('Indica una cantidad valida.');
+    return;
+  }
+  const menuRule = service.planCode === 'menu' ? MENU_EXTRA_RULES[data.type] : null;
+  let extraPrice = round(data.price || 0);
+  if (menuRule) {
+    extraPrice = menuRule.fixed
+      ? round(menuRule.price * quantity)
+      : round(Math.max(menuRule.price, Number(data.price || 0)));
+  }
+  if (extraPrice <= 0) {
+    showToast('Indica un importe valido para el servicio adicional.');
     return;
   }
   service.extraCredits ||= [];
@@ -2192,7 +2648,7 @@ async function handleExtraCreditSubmit(form) {
     id: uid('credit'),
     type: data.type,
     quantity,
-    price: round(data.price || 0),
+    price: extraPrice,
     status: data.status,
     notes: data.notes?.trim() || '',
     cycleStart: iso(serviceCycleStart(service)),
@@ -2220,6 +2676,7 @@ async function handleExtraCreditSubmit(form) {
 }
 
 async function handleMemberSubmit(form) {
+  if (!canManageMembers()) return;
   const formData = new FormData(form);
   const data = Object.fromEntries(formData);
   const id = form.dataset.id || uid('user');
@@ -2277,9 +2734,49 @@ async function handleMemberSubmit(form) {
   }
 }
 
+function restoreMember(id) {
+  if (!canManageMembers()) return;
+  const member = memberById(id);
+  if (!member || member.role === 'owner') return;
+  member.active = true;
+  member.removedAt = '';
+  showToast('Miembro reactivado con sus asignaciones anteriores');
+  render();
+}
+
+async function purgeMember(id) {
+  if (!canManageMembers()) return;
+  const member = memberById(id);
+  if (!member || member.role === 'owner') return;
+  if (!confirm(`Eliminar definitivamente a ${member.name}? Sus tareas y notas conservarán el historial, pero ese email no podrá volver a este espacio durante 20 días.`)) return;
+  try {
+    const token = await getAccessToken();
+    const response = await fetch('/api/shared-state', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+      body: JSON.stringify({ action: 'purge-member', workspaceId: app.workspace.id, memberId: id }),
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result.error || 'No se pudo eliminar el miembro.');
+    app.state.tasks.forEach(task => {
+      if (task.assignedTo === id && !task.assignedName) task.assignedName = member.name;
+      if (task.createdBy === id && !task.createdByName) task.createdByName = member.name;
+    });
+    app.state.members = app.state.members.filter(item => item.id !== id);
+    app.state.services.forEach(service => {
+      service.assignedMemberIds = serviceMemberIds(service).filter(memberId => memberId !== id);
+      service.assignedTo = service.assignedMemberIds[0] || '';
+    });
+    showToast('Miembro eliminado definitivamente');
+    render();
+  } catch (error) {
+    showToast(error.message || 'No se pudo eliminar el miembro.');
+  }
+}
+
 function handlePlanChangeSubmit(form) {
   const service = app.state.services.find(item => item.id === form.dataset.id);
-  if (!service) return;
+  if (!service || !canOperateService(service)) return;
   const data = Object.fromEntries(new FormData(form));
   const newPlan = data.planCode;
   const oldRank = BASE_PLAN_CODES.indexOf(service.planCode);
@@ -2496,6 +2993,7 @@ function setTaskStatus(id, status) {
   if (!task) return;
   const service = app.state.services.find(item => item.id === task.serviceId);
   if (!service) return;
+  if (!canSeeTask(task)) return;
   if (service.status !== 'active' && status !== 'cancelled') {
     showToast('No se puede trabajar mientras el servicio este pendiente, suspendido, pausado o cancelado.');
     return;
@@ -2535,17 +3033,18 @@ function setTaskStatus(id, status) {
 }
 
 function removeMember(id) {
+  if (!canManageMembers()) return;
   const member = memberById(id);
   if (!member || member.role === 'owner') return;
-  if (!confirm(`Expulsar a ${member.name}? Sus servicios quedaran sin reasignar.`)) return;
+  if (!confirm(`Expulsar a ${member.name}? Perdera el acceso de inmediato, pero podras reactivarlo desde Ajustes.`)) return;
   member.active = false;
-  app.state.services.filter(service => service.assignedTo === id).forEach(service => { service.assignedTo = app.state.currentUserId; });
+  member.removedAt = nowIso();
   showToast('Miembro expulsado');
   render();
 }
 
 function deleteRestaurant(id) {
-  if (!canManage()) return;
+  if (!canDeleteRestaurant()) return;
   const restaurant = restaurantById(id);
   if (!restaurant) return;
   const serviceIds = new Set(app.state.services.filter(service => service.restaurantId === id).map(service => service.id));
@@ -2568,7 +3067,7 @@ function deleteRestaurant(id) {
 function deleteTask(id) {
   const task = app.state.tasks.find(item => item.id === id);
   if (!task) return;
-  if (!canManage() && task.assignedTo !== app.state.currentUserId) return;
+  if (!canSeeTask(task)) return;
   if (!confirm(`Borrar la tarea "${task.title}"? Si estaba completada, sus cuotas volveran a estar disponibles.`)) return;
   app.state.tasks = app.state.tasks.filter(item => item.id !== id);
   showToast('Tarea borrada');
@@ -2577,15 +3076,11 @@ function deleteTask(id) {
 
 function openPauseModal(id) {
   const service = app.state.services.find(item => item.id === id);
-  if (!service || !canManage() || service.planCode === 'menu') return;
-  if (new Date() < commitmentEnd(service)) {
-    showToast('La pausa ordinaria solo esta disponible despues de los 3 meses iniciales.');
-    return;
-  }
+  if (!service || !canOperateService(service) || service.planCode === 'menu') return;
   openModal(modalFrame('Pausar servicio', 'PAUSA EXCEPCIONAL', `
     <form id="pauseServiceForm" data-id="${service.id}">
       <div class="form-grid">
-        <label>Fecha de inicio<input name="pausedAt" type="date" value="${iso()}" required></label>
+        <label class="date-field">Fecha de inicio<input name="pausedAt" type="date" value="${iso()}" required></label>
         <label>Duracion prevista<input name="plannedDays" type="number" min="1" max="31" value="7" required></label>
         <label class="wide">Motivo interno<textarea name="notes" placeholder="Motivo de la pausa y confirmacion con el restaurante..."></textarea></label>
       </div>
@@ -2598,7 +3093,7 @@ function openPauseModal(id) {
 function handlePauseServiceSubmit(form) {
   const data = Object.fromEntries(new FormData(form));
   const service = app.state.services.find(item => item.id === form.dataset.id);
-  if (!service || !canManage()) return;
+  if (!service || !canOperateService(service)) return;
   const pausedAt = data.pausedAt || iso();
   service.pausedAt = `${pausedAt}T00:00:00.000Z`;
   service.status = 'paused';
@@ -2612,7 +3107,7 @@ function handlePauseServiceSubmit(form) {
 
 function resumeService(id) {
   const service = app.state.services.find(item => item.id === id);
-  if (!service || !canManage() || !service.pausedAt) return;
+  if (!service || !canOperateService(service) || !service.pausedAt) return;
   const pausedAt = parseDate(service.pausedAt);
   const days = daysBetween(pausedAt, new Date());
   service.pauseHistory ||= [];
@@ -2629,7 +3124,7 @@ function resumeService(id) {
 
 function cancelService(id) {
   const service = app.state.services.find(item => item.id === id);
-  if (!service) return;
+  if (!service || !canCancelService(service)) return;
   const nextPayment = serviceNextPaymentDate(service);
   const notice = cancellationNoticeDate(service);
   const remainingMonths = Math.max(0, Math.ceil((commitmentEnd(service) - nextPayment) / (1000 * 60 * 60 * 24 * 30)));
@@ -2752,17 +3247,6 @@ function handleSettingsSubmit(form) {
   render();
 }
 
-async function resetDemo() {
-  if (!confirm('Reiniciar todos los datos de Cuotly?')) return;
-  localStorage.removeItem(storageKey());
-  if (app.auth.client && app.auth.user) {
-    await app.auth.client.from('cuotly_user_states').delete().eq('user_id', app.auth.user.id);
-  }
-  await loadState();
-  showToast('Datos reiniciados');
-  showView('inicio');
-}
-
 function showAlertsModal() {
   const alerts = getAlerts();
   openModal(modalFrame('Avisos de Cuotly', 'CONTROL', `
@@ -2786,10 +3270,12 @@ async function handleClick(event) {
   if (action === 'logout') { logout(); return; }
   if (action === 'auth-mode') { renderAuthScreen(actionEl.dataset.mode || 'login'); return; }
   if (action === 'auth-google') { handleGoogleLogin(); return; }
+  if (action === 'switch-workspace') { await switchWorkspace(id); return; }
   if (action === 'show-alerts') showAlertsModal();
   if (action === 'open-restaurant') showView('restaurante-detalle', { restaurantId: id });
   if (action === 'open-restaurant-modal') openRestaurantModal(id);
   if (action === 'open-service-modal') openServiceModal(id, { restaurantId: actionEl.dataset.restaurant, planCode: actionEl.dataset.plan });
+  if (action === 'open-service-team-modal') openServiceTeamModal(id);
   if (action === 'open-task-modal') openTaskModal(id, { restaurantId: actionEl.dataset.restaurant, serviceId: actionEl.dataset.service });
   if (action === 'open-extra-credit-modal') openExtraCreditModal(id);
   if (action === 'open-pause-modal') openPauseModal(id);
@@ -2808,6 +3294,9 @@ async function handleClick(event) {
   if (action === 'mark-paid') await markPaymentPaid(id);
   if (action === 'toggle-fiometra') await toggleFiometra(id);
   if (action === 'remove-member') removeMember(id);
+  if (action === 'restore-member') restoreMember(id);
+  if (action === 'purge-member') await purgeMember(id);
+  if (action === 'open-note-modal') openNoteModal(id, actionEl.dataset.note || '');
   if (action === 'delete-restaurant') deleteRestaurant(id);
   if (action === 'delete-task') deleteTask(id);
   if (action === 'cancel-service') cancelService(id);
@@ -2821,7 +3310,6 @@ async function handleClick(event) {
   if (action === 'calendar-next') { app.calendarMonth = addMonths(app.calendarMonth, 1); renderCalendar(); }
   if (action === 'calendar-today') { app.calendarMonth = startOfMonth(new Date()); renderCalendar(); }
   if (action === 'open-settings-prices') { app.settingsTab = 'general'; showView('ajustes'); }
-  if (action === 'reset-demo') resetDemo();
 }
 
 function handleSubmit(event) {
@@ -2839,10 +3327,13 @@ function handleSubmit(event) {
   if (form.id === 'restaurantForm') handleRestaurantSubmit(form);
   if (form.id === 'serviceForm') handleServiceSubmit(form);
   if (form.id === 'taskForm') handleTaskSubmit(form);
+  if (form.id === 'serviceTeamForm') handleServiceTeamSubmit(form);
+  if (form.id === 'restaurantNoteForm') handleRestaurantNoteSubmit(form);
   if (form.id === 'extraCreditForm') handleExtraCreditSubmit(form);
   if (form.id === 'pauseServiceForm') handlePauseServiceSubmit(form);
   if (form.id === 'memberForm') handleMemberSubmit(form);
   if (form.id === 'planChangeForm') handlePlanChangeSubmit(form);
+  if (form.id === 'workspaceCreateForm') { createWorkspaceFromForm(form); return; }
   if (form.id === 'reportForm') {
     const data = Object.fromEntries(new FormData(form));
     const report = generateReport(data.restaurantId, data.month);
@@ -2868,11 +3359,17 @@ function registerServiceWorker() {
 
 async function startApp() {
   await loadState();
+  if (app.workspace.needsSetup) {
+    stopWorkspaceAccessCheck();
+    renderWorkspaceGate();
+    return;
+  }
   app.selectedRestaurantId = visibleRestaurants()[0]?.id || null;
   showAppShell();
   registerServiceWorker();
   render();
   app.booted = true;
+  startWorkspaceAccessCheck();
   if (app.auth.client && !app.persistence.cloudAvailable) {
     showToast('Falta ejecutar la actualizacion de Supabase para sincronizar dispositivos');
   }

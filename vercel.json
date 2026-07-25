@@ -10,5 +10,11 @@
       "source": "/(.*)",
       "destination": "/index.html"
     }
+  ],
+  "crons": [
+    {
+      "path": "/api/billing-cycle",
+      "schedule": "0 4 * * *"
+    }
   ]
 }
