@@ -1,4 +1,4 @@
-const CACHE_NAME = 'cuotly-v16-final-plans';
+const CACHE_NAME = 'cuotly-v17-member-purge';
 const ASSETS = [
   './',
   './index.html',
