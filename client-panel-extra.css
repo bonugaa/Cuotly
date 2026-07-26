@@ -1,0 +1,26 @@
+.cp-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 10px;
+}
+
+.cp-attachment {
+  border: 1px solid #b7d2c8;
+  background: #f4faf7;
+  color: #155d50;
+  border-radius: 6px;
+  padding: 7px 9px;
+  font: 700 12px 'DM Sans', sans-serif;
+  cursor: pointer;
+}
+
+.cp-attachment:hover {
+  background: #e5f4ed;
+}
+
+.cp-form small {
+  color: var(--cp-muted);
+  font-weight: 400;
+  line-height: 1.4;
+}

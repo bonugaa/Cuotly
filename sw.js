@@ -1,10 +1,13 @@
-const CACHE_NAME = 'cuotly-v21-avatar-optional';
+const CACHE_NAME = 'cuotly-v23-client-portal-files';
 const ASSETS = [
   './',
   './index.html',
   './styles.css',
+  './client-panel.css',
+  './client-panel-extra.css',
   './config.js',
   './app.js',
+  './client-panel.js',
   './manifest.webmanifest',
   './app-icon.svg'
 ];

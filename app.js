@@ -724,6 +724,202 @@ async function getAccessToken() {
   return app.auth.session?.access_token || '';
 }
 
+async function createClientPortal(restaurantId) {
+  if (!isOwner()) return;
+  const token = await getAccessToken();
+  const restaurant = restaurantById(restaurantId);
+  if (!token || !restaurant) return;
+  try {
+    const response = await fetch('/api/client-portal', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+      body: JSON.stringify({ action: 'create-portal', workspaceId: app.workspace.id, restaurantId }),
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok || !result.portal?.id) throw new Error(result.error || 'No se pudo crear el panel del restaurante.');
+    restaurant.clientPortalId = result.portal.id;
+    saveState();
+    showToast('Panel de restaurante creado');
+    renderRestaurantDetail();
+  } catch (error) {
+    showToast(error.message || 'No se pudo crear el panel.');
+  }
+}
+
+function openClientPortal(restaurantId) {
+  const restaurant = restaurantById(restaurantId);
+  if (!restaurant?.clientPortalId) {
+    showToast('Crea primero el panel privado de este restaurante.');
+    return;
+  }
+  const url = new URL(window.location.href);
+  url.searchParams.set('clientPortal', restaurant.clientPortalId);
+  url.searchParams.delete('clientInvite');
+  window.location.assign(url.toString());
+}
+
+function openClientPortalInviteModal(restaurantId) {
+  const restaurant = restaurantById(restaurantId);
+  if (!isOwner() || !restaurant?.clientPortalId) {
+    showToast('Crea primero el panel privado del restaurante.');
+    return;
+  }
+  openModal(modalFrame('Anadir cliente al panel', 'PANEL DE RESTAURANTE', `
+    <form id="clientPortalInviteForm" data-restaurant="${restaurant.id}" data-portal="${restaurant.clientPortalId}">
+      <p class="modal-copy">Se enviara un email para que esta persona cree su propia cuenta o entre con la que ya tiene. Al aceptarlo solo vera este restaurante.</p>
+      <label>Email del propietario o miembro<input name="email" type="email" required autocomplete="email"></label>
+      <label>Permiso<select name="role"><option value="owner">Propietario del restaurante</option><option value="editor">Puede solicitar y editar</option><option value="viewer">Solo consultar</option></select></label>
+      <div class="modal-actions"><button type="button" class="secondary-button" data-action="close-modal">Cancelar</button><button class="primary-button">Enviar invitacion</button></div>
+    </form>
+  `));
+}
+
+async function handleClientPortalInvite(form) {
+  if (!isOwner()) return;
+  const token = await getAccessToken();
+  if (!token) return;
+  const data = Object.fromEntries(new FormData(form));
+  try {
+    const response = await fetch('/api/client-portal', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+      body: JSON.stringify({ action: 'invite-client', portalId: form.dataset.portal, email: data.email, role: data.role }),
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result.error || 'No se pudo enviar la invitacion.');
+    closeModal();
+    showToast('Invitacion enviada al restaurante');
+  } catch (error) {
+    showToast(error.message || 'No se pudo enviar la invitacion.');
+  }
+}
+
+async function clientPortalApi(action, body = {}, method = 'POST') {
+  const token = await getAccessToken();
+  if (!token) throw new Error('Tu sesion ha terminado.');
+  const url = method === 'GET'
+    ? `/api/client-portal?action=${encodeURIComponent(action)}&${new URLSearchParams(body)}`
+    : '/api/client-portal';
+  const response = await fetch(url, {
+    method,
+    headers: { ...(method === 'GET' ? {} : { 'content-type': 'application/json' }), authorization: `Bearer ${token}` },
+    body: method === 'GET' ? undefined : JSON.stringify({ action, ...body }),
+  });
+  const output = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(output.error || 'No se pudo completar la accion.');
+  return output;
+}
+
+function clientRequestActions(request, portalId) {
+  if (request.status === 'pending') return `
+    <button class="secondary-button" data-action="client-request-update" data-portal="${portalId}" data-request="${request.id}" data-status="accepted">Aceptar</button>
+    <button class="secondary-button danger-outline" data-action="client-request-update" data-portal="${portalId}" data-request="${request.id}" data-status="rejected">Rechazar</button>`;
+  if (['pause', 'cancellation', 'extra_package', 'restaurant_link'].includes(request.kind)) return '';
+  if (request.status === 'accepted') return `<button class="secondary-button" data-action="client-request-update" data-portal="${portalId}" data-request="${request.id}" data-status="in_progress">Empezar</button>`;
+  if (request.status === 'in_progress' || request.status === 'waiting') return `
+    <button class="secondary-button" data-action="client-request-update" data-portal="${portalId}" data-request="${request.id}" data-status="waiting">Esperar respuesta</button>
+    <button class="primary-button" data-action="client-request-update" data-portal="${portalId}" data-request="${request.id}" data-status="completed">Completar</button>`;
+  return '';
+}
+
+async function openClientRequestInbox(restaurantId) {
+  const restaurant = restaurantById(restaurantId);
+  if (!restaurant?.clientPortalId) {
+    showToast('Este restaurante todavia no tiene panel privado.');
+    return;
+  }
+  try {
+    const result = await clientPortalApi('bootstrap', { portalId: restaurant.clientPortalId }, 'GET');
+    const requests = result.data?.requests || [];
+    openModal(modalFrame(`Solicitudes de ${restaurant.name}`, 'PANEL DE RESTAURANTE', `
+      <p class="modal-copy">Estas solicitudes solo pertenecen a este restaurante. Al aceptarlas se crea el trabajo correspondiente y se reserva su saldo.</p>
+      <div class="modal-list client-request-inbox">
+        ${requests.map(request => `
+          <article>
+            <div>
+              <strong>${esc(request.title)}</strong>
+              <p>${esc(request.description || 'Sin descripcion')}</p>
+              <small>${formatDateTime(request.requestedAt)} · ${esc(STATUS_LABELS[request.status] || request.status)} · ${esc(request.kind)}</small>
+            </div>
+            <div class="modal-actions compact">
+              <button class="secondary-button" data-action="open-client-request-chat" data-portal="${restaurant.clientPortalId}" data-request="${request.id}" data-title="${esc(request.title)}">Chat</button>
+              ${clientRequestActions(request, restaurant.clientPortalId)}
+            </div>
+          </article>`).join('') || '<p class="settings-copy">No hay solicitudes del restaurante.</p>'}
+      </div>
+      <div class="modal-actions"><button class="secondary-button" data-action="close-modal">Cerrar</button></div>
+    `));
+  } catch (error) {
+    showToast(error.message || 'No se pudieron abrir las solicitudes.');
+  }
+}
+
+async function updateClientRequest(portalId, requestId, status) {
+  let reason = '';
+  if (status === 'rejected') {
+    reason = window.prompt('Indica brevemente el motivo del rechazo.') || '';
+    if (!reason.trim()) return;
+  }
+  try {
+    await clientPortalApi('maintenance-request-update', { portalId, requestId, status, reason });
+    closeModal();
+    showToast(status === 'completed' ? 'Solicitud completada y saldo actualizado.' : 'Solicitud actualizada.');
+    renderRestaurantDetail();
+  } catch (error) {
+    showToast(error.message || 'No se pudo actualizar la solicitud.');
+  }
+}
+
+function clientAttachmentLink(attachment) {
+  if (!attachment?.path) return '';
+  return `<button class="attachment-link" data-action="open-client-attachment" data-portal="${esc(attachment.path.split('/')[1] || '')}" data-path="${esc(attachment.path)}">${esc(attachment.name || 'Archivo adjunto')}</button>`;
+}
+
+async function openClientRequestChat(portalId, requestId, title) {
+  try {
+    const result = await clientPortalApi('messages', { portalId, requestId }, 'GET');
+    const messages = result.messages || [];
+    openModal(modalFrame(title || 'Chat de solicitud', 'CONVERSACION', `
+      <div class="client-request-chat">
+        ${messages.map(message => `<article class="${message.side === 'maintenance' ? 'from-maintenance' : 'from-client'}"><p>${esc(message.body)}</p><small>${message.side === 'maintenance' ? 'Equipo de mantenimiento' : 'Restaurante'} · ${formatDateTime(message.createdAt)}</small>${(message.attachments || []).map(clientAttachmentLink).join('')}</article>`).join('') || '<p class="settings-copy">Todavia no hay mensajes.</p>'}
+      </div>
+      <form id="maintenanceClientMessageForm" data-portal="${portalId}" data-request="${requestId}">
+        <label>Responder<textarea name="message" required maxlength="8000"></textarea></label>
+        <div class="modal-actions"><button type="button" class="secondary-button" data-action="close-modal">Cerrar</button><button class="primary-button">Enviar respuesta</button></div>
+      </form>
+    `));
+  } catch (error) {
+    showToast(error.message || 'No se pudo abrir el chat.');
+  }
+}
+
+async function sendMaintenanceClientMessage(form) {
+  const body = Object.fromEntries(new FormData(form));
+  try {
+    await clientPortalApi('send-message', { portalId: form.dataset.portal, requestId: form.dataset.request, message: body.message });
+    await openClientRequestChat(form.dataset.portal, form.dataset.request, 'Chat de solicitud');
+    showToast('Respuesta enviada.');
+  } catch (error) {
+    showToast(error.message || 'No se pudo enviar la respuesta.');
+  }
+}
+
+async function openClientAttachment(portalId, path) {
+  try {
+    const token = await getAccessToken();
+    const response = await fetch('/api/client-upload', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+      body: JSON.stringify({ action: 'signed-url', portalId, path }),
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok || !result.url) throw new Error(result.error || 'No se pudo abrir el archivo.');
+    window.open(result.url, '_blank', 'noopener');
+  } catch (error) {
+    showToast(error.message || 'No se pudo abrir el archivo.');
+  }
+}
+
 async function sendMemberInvitation(member, mode = 'invite') {
   const token = await getAccessToken();
   if (!token) throw new Error('Tienes que iniciar sesion para invitar miembros.');
@@ -1023,9 +1219,9 @@ function quotaUsage(service, reference = new Date()) {
     usage[type] = { used: 0, limit: cycleCreditLimit(service, type, reference) };
   });
   app.state.tasks
-    .filter(task => task.serviceId === service.id && task.status === 'completed' && task.completedAt && task.consumesQuota !== false)
+    .filter(task => task.serviceId === service.id && task.consumesQuota !== false && (task.status === 'completed' || task.quotaConsumedAt))
     .filter(task => {
-      const completed = new Date(task.completedAt);
+      const completed = new Date(task.quotaConsumedAt || task.completedAt || 0);
       return completed >= start && completed <= addDays(end, 1);
     })
     .forEach(task => {
@@ -1760,6 +1956,9 @@ function renderRestaurantDetail() {
         <div><div class="title-with-status"><h1>${esc(restaurant.name)}</h1>${statusPill(restaurant.status)}</div><p>${esc(restaurant.address || '')}</p><div class="contact-line"><span>${esc(restaurant.email || '')}</span><i></i><span>${esc(restaurant.phone || '')}</span></div></div>
       </div>
       <div class="detail-actions">
+        ${isOwner() ? `<button class="secondary-button" data-action="${restaurant.clientPortalId ? 'open-client-portal' : 'create-client-portal'}" data-id="${restaurant.id}">${restaurant.clientPortalId ? 'Ver panel' : 'Crear panel'}</button>` : ''}
+        ${isOwner() && restaurant.clientPortalId ? `<button class="secondary-button" data-action="open-client-portal-invite" data-id="${restaurant.id}">Anadir cliente</button>` : ''}
+        ${restaurant.clientPortalId ? `<button class="secondary-button" data-action="open-client-requests" data-id="${restaurant.id}">Solicitudes cliente</button>` : ''}
         ${canManage() ? `<button class="secondary-button" data-action="open-restaurant-modal" data-id="${restaurant.id}">Editar ficha</button>` : ''}
         <button class="secondary-button" data-action="open-note-modal" data-id="${restaurant.id}">Añadir nota</button>
         ${canManage() ? `<button class="secondary-button" data-action="open-service-modal" data-restaurant="${restaurant.id}">Añadir servicio</button>` : ''}
@@ -2511,6 +2710,7 @@ function openRestaurantModal(id) {
         <label class="wide">Direccion<input name="address" value="${esc(restaurant.address || '')}" placeholder="Calle, numero, Madrid"></label>
         <label>Ciudad<input name="city" value="${esc(restaurant.city || 'Madrid')}"></label>
         <label>Estado<select name="status"><option value="active" ${restaurant.status !== 'paused' ? 'selected' : ''}>Activo</option><option value="paused" ${restaurant.status === 'paused' ? 'selected' : ''}>Pausado</option></select></label>
+        <label class="wide">URL publica de la web<input name="publicUrl" type="url" value="${esc(restaurant.publicUrl || '')}" placeholder="https://www.restaurante.es"></label>
         <label class="wide">Notas<textarea name="notes" placeholder="Notas internas...">${esc(restaurant.notes || '')}</textarea></label>
       </div>
       <div class="modal-actions"><button type="button" class="secondary-button" data-action="close-modal">Cancelar</button><button class="primary-button">${isEdit ? 'Guardar ficha' : 'Crear restaurante'}</button></div>
@@ -2851,6 +3051,7 @@ function handleRestaurantSubmit(form) {
     phone: data.phone.trim(),
     address: data.address.trim(),
     city: data.city.trim(),
+    publicUrl: data.publicUrl.trim(),
     notes: data.notes.trim(),
     status: data.status,
     createdAt: existing?.createdAt || iso(),
@@ -3384,6 +3585,7 @@ function setTaskStatus(id, status) {
   if (status === 'completed') {
     if (!task.startedAt) task.startedAt = nowIso();
     task.completedAt = nowIso();
+    if (task.consumesQuota && quotaType !== 'external_incident') task.quotaConsumedAt ||= task.completedAt;
   }
   if (status === 'cancelled') {
     task.cancelledAt = nowIso();
@@ -3649,6 +3851,13 @@ async function handleClick(event) {
   if (action === 'open-restaurant') showView('restaurante-detalle', { restaurantId: id });
   if (action === 'open-restaurant-modal') openRestaurantModal(id);
   if (action === 'open-service-modal') openServiceModal(id, { restaurantId: actionEl.dataset.restaurant, planCode: actionEl.dataset.plan });
+  if (action === 'create-client-portal') await createClientPortal(id);
+  if (action === 'open-client-portal') openClientPortal(id);
+  if (action === 'open-client-portal-invite') openClientPortalInviteModal(id);
+  if (action === 'open-client-requests') await openClientRequestInbox(id);
+  if (action === 'client-request-update') await updateClientRequest(actionEl.dataset.portal, actionEl.dataset.request, actionEl.dataset.status);
+  if (action === 'open-client-request-chat') await openClientRequestChat(actionEl.dataset.portal, actionEl.dataset.request, actionEl.dataset.title);
+  if (action === 'open-client-attachment') await openClientAttachment(actionEl.dataset.portal, actionEl.dataset.path);
   if (action === 'open-service-team-modal') openServiceTeamModal(id);
   if (action === 'open-task-modal') openTaskModal(id, { restaurantId: actionEl.dataset.restaurant, serviceId: actionEl.dataset.service });
   if (action === 'open-extra-credit-modal') openExtraCreditModal(id);
@@ -3709,6 +3918,8 @@ function handleSubmit(event) {
   if (form.id === 'taskForm') handleTaskSubmit(form);
   if (form.id === 'serviceTeamForm') handleServiceTeamSubmit(form);
   if (form.id === 'restaurantNoteForm') handleRestaurantNoteSubmit(form);
+  if (form.id === 'clientPortalInviteForm') { handleClientPortalInvite(form); return; }
+  if (form.id === 'maintenanceClientMessageForm') { sendMaintenanceClientMessage(form); return; }
   if (form.id === 'extraCreditForm') handleExtraCreditSubmit(form);
   if (form.id === 'pauseServiceForm') handlePauseServiceSubmit(form);
   if (form.id === 'memberForm') handleMemberSubmit(form);
@@ -3794,6 +4005,13 @@ async function answerInvitation(inviteId, answer) {
 
 async function startApp() {
   if (!app.auth.user) return;
+  if (window.CuotlyClientPortal?.requested?.()) {
+    if (needsAccountCompletion()) { renderAccountCompletion(); return; }
+    const clientMfaReady = await mfaGate();
+    if (!clientMfaReady) return;
+    await window.CuotlyClientPortal.start({ client: app.auth.client, user: app.auth.user, getToken: getAccessToken });
+    return;
+  }
   if (needsAccountCompletion()) { renderAccountCompletion(); return; }
   const mfaReady = await mfaGate();
   if (!mfaReady) return;

@@ -15,7 +15,7 @@ function cleanSupabaseUrl(value) {
 if (existsSync(out)) rmSync(out, { recursive: true, force: true });
 mkdirSync(out, { recursive: true });
 
-for (const file of ['index.html', 'styles.css', 'app.js', 'manifest.webmanifest', 'app-icon.svg', 'sw.js']) {
+for (const file of ['index.html', 'styles.css', 'client-panel.css', 'client-panel-extra.css', 'app.js', 'client-panel.js', 'manifest.webmanifest', 'app-icon.svg', 'sw.js']) {
   copyFileSync(join(root, file), join(out, file));
 }
 
