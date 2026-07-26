@@ -1,4 +1,4 @@
-const CACHE_NAME = 'cuotly-v20-profile-save';
+const CACHE_NAME = 'cuotly-v21-avatar-optional';
 const ASSETS = [
   './',
   './index.html',

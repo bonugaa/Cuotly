@@ -2289,7 +2289,7 @@ function accountTabContent(profile) {
 }
 
 async function uploadAccountAvatar(file) {
-  if (!file) return accountProfile().avatarUrl;
+  if (!file || !file.name || !file.size) return accountProfile().avatarUrl;
   if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 2 * 1024 * 1024) throw new Error('La foto debe ser JPG, PNG o WEBP y pesar menos de 2 MB.');
   const path = `${app.auth.user.id}/avatar.${file.name.split('.').pop().toLowerCase()}`;
   const { error } = await app.auth.client.storage.from('cuotly-avatars').upload(path, file, { upsert: true, cacheControl: '3600', contentType: file.type });
