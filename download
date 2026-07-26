@@ -1,0 +1,7 @@
+# Copia accidental de las funciones: las rutas reales viven en /api.
+api/api/
+
+# Archivos locales y documentación que Vercel no necesita publicar.
+dist/
+supabase/
+*.md
