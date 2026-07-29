@@ -123,7 +123,7 @@
     state.pendingFiles=[...form.querySelector('[name="attachments"]')?.files||[]];
     const button=form.querySelector('button.cp-primary');button.disabled=true;button.textContent='Analizando...';
     try{
-      const response=await fetch('/api/classify-change',{method:'POST',headers:{'content-type':'application/json',authorization:`Bearer ${await token()}`},body:JSON.stringify({workspaceId:state.data.portal.workspaceId,restaurantId:state.data.portal.restaurantId,serviceId:data.serviceId,title:data.title,description:data.description})});
+      const response=await fetch('/api/classify-change',{method:'POST',headers:{'content-type':'application/json',authorization:`Bearer ${await token()}`},body:JSON.stringify({workspaceId:state.data.portal.workspaceId,restaurantId:state.data.portal.restaurantId,serviceId:data.serviceId,title:data.title})});
       const output=await response.json().catch(()=>({}));
       if(!response.ok)throw new Error(output.error||'No se pudo analizar.');
       const choices=output.analysis.choices||[];
