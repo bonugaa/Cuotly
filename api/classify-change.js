@@ -128,8 +128,7 @@ export default async function handler(req, res) {
   const restaurantId = String(body.restaurantId || '');
   const serviceId = String(body.serviceId || '');
   const title = String(body.title || '').trim().slice(0, 180);
-  const description = String(body.description || '').trim().slice(0, 8000);
-  if (!workspaceId || !restaurantId || !serviceId || (!title && !description)) return res.status(400).json({ error: 'Faltan los datos de la solicitud.' });
+  if (!workspaceId || !restaurantId || !serviceId || !title) return res.status(400).json({ error: 'Introduce un titulo para analizar el cambio.' });
 
   const access = await workspaceAccess(caller, workspaceId, restaurantId, serviceId) || await clientAccess(caller, workspaceId, restaurantId, serviceId);
   if (!access) return res.status(403).json({ error: 'No tienes acceso a este servicio.' });
@@ -138,7 +137,7 @@ export default async function handler(req, res) {
   if (!planLimits) return res.status(400).json({ error: 'El servicio no admite este tipo de analisis.' });
   if (access.service.status !== 'active') return res.status(409).json({ error: 'No se pueden analizar solicitudes de un servicio pausado, suspendido o cancelado.' });
 
-  const prompt = `Servicio contratado: ${planCode}. Limites incluidos por ciclo: ${JSON.stringify(planLimits)}.\nSolicitud:\nTitulo: ${title}\nDescripcion: ${description}\n\nDevuelve opciones realistas. No inventes cuotas ni prometas trabajos fuera de alcance. Si no hay una opcion de cuota valida, usa quoteRequired=true. Para Menu Diario, solo permite menu_update. ${CHANGE_GUIDE}`;
+  const prompt = `Servicio contratado: ${planCode}. Limites incluidos por ciclo: ${JSON.stringify(planLimits)}.\nTitulo de la solicitud: ${title}\n\nClasifica exclusivamente a partir de este titulo. Si no concreta suficiente el volumen o alcance, usa quoteRequired=true y pide la informacion que falte. Devuelve opciones realistas. No inventes cuotas ni prometas trabajos fuera de alcance. Para Menu Diario, solo permite menu_update. ${CHANGE_GUIDE}`;
   const response = await fetch('https://api.openai.com/v1/responses', {
     method: 'POST',
     headers: { authorization: `Bearer ${OPENAI_API_KEY}`, 'content-type': 'application/json' },
