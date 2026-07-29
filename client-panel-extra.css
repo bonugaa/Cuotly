@@ -24,3 +24,169 @@
   font-weight: 400;
   line-height: 1.4;
 }
+
+/* Navegacion completa del portal de restaurante en movil. */
+.cp-topbar-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.cp-menu-toggle,
+.cp-sidebar-close,
+.cp-mobile-backdrop {
+  display: none;
+}
+
+@media (max-width: 850px) {
+  body.cp-menu-open {
+    overflow: hidden;
+  }
+
+  .cp-shell {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .cp-sidebar {
+    display: flex;
+    position: fixed;
+    inset: 0 auto 0 0;
+    z-index: 40;
+    width: min(292px, 86vw);
+    min-height: 100dvh;
+    padding: 22px 18px;
+    gap: 24px;
+    overflow-y: auto;
+    transform: translateX(-105%);
+    visibility: hidden;
+    pointer-events: none;
+    transition: transform .22s ease, visibility 0s linear .22s;
+    box-shadow: 10px 0 34px rgba(5, 29, 23, .28);
+  }
+
+  .cp-shell.menu-open .cp-sidebar {
+    transform: translateX(0);
+    visibility: visible;
+    pointer-events: auto;
+    transition: transform .22s ease;
+  }
+
+  .cp-mobile-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 30;
+    width: 100%;
+    height: 100%;
+    border: 0;
+    padding: 0;
+    opacity: 0;
+    pointer-events: none;
+    background: rgba(5, 28, 22, .5);
+    transition: opacity .2s ease;
+  }
+
+  .cp-shell.menu-open .cp-mobile-backdrop {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .cp-brand {
+    align-items: center;
+  }
+
+  .cp-brand > div {
+    min-width: 0;
+    flex: 1;
+  }
+
+  .cp-sidebar-close,
+  .cp-menu-toggle {
+    display: grid;
+    place-items: center;
+    flex: 0 0 auto;
+    border: 1px solid #cfe2da;
+    border-radius: 7px;
+    color: #10453b;
+    background: #fff;
+    cursor: pointer;
+    font: 700 21px/1 'DM Sans', sans-serif;
+  }
+
+  .cp-sidebar-close {
+    width: 34px;
+    height: 34px;
+    margin-left: auto;
+    color: #eff9f4;
+    border-color: rgba(237, 248, 243, .25);
+    background: rgba(255, 255, 255, .1);
+  }
+
+  .cp-menu-toggle {
+    width: 38px;
+    height: 38px;
+    font-size: 22px;
+  }
+
+  .cp-topbar {
+    height: 68px;
+    padding: 0 16px;
+  }
+
+  .cp-topbar-title {
+    gap: 10px;
+  }
+
+  .cp-topbar h1 {
+    max-width: min(56vw, 310px);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .cp-user span {
+    display: none;
+  }
+
+  .cp-content {
+    padding: 20px 15px 32px;
+  }
+
+  .cp-mobile-menu {
+    display: none;
+  }
+}
+
+@media (max-width: 480px) {
+  .cp-topbar {
+    height: 64px;
+    padding: 0 12px;
+  }
+
+  .cp-topbar h1 {
+    font-size: 16px;
+  }
+
+  .cp-topbar p {
+    font-size: 11px;
+  }
+
+  .cp-content {
+    padding: 16px 12px 28px;
+  }
+
+  .cp-actions > button,
+  .cp-actions > a {
+    width: 100%;
+    justify-content: center;
+    text-align: center;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cp-sidebar,
+  .cp-mobile-backdrop {
+    transition: none;
+  }
+}

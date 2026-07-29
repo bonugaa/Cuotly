@@ -1,6 +1,6 @@
 (() => {
   const query = () => new URLSearchParams(location.search);
-  const state = { client:null, user:null, getToken:null, portalId:'', data:null, portals:[], view:'inicio', preview:false, busy:false };
+  const state = { client:null, user:null, getToken:null, portalId:'', data:null, portals:[], view:'inicio', preview:false, busy:false, mobileMenu:false };
   const root = () => document.querySelector('#clientPanelRoot');
   const esc = value => String(value ?? '').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#039;');
   const formatDate = value => value ? new Intl.DateTimeFormat('es-ES',{day:'numeric',month:'short',year:'numeric'}).format(new Date(value)) : 'Sin fecha';
@@ -30,7 +30,21 @@
   function teamPage(){ const members=state.data.clientMembers||[]; const owner=state.data.member?.role==='owner'; return `${pageHeading('Mi equipo','Personas de tu restaurante que pueden acceder a este panel.',owner?'<button class="cp-primary" data-cp-action="open-client-invite">Añadir persona</button>':'')}<section class="cp-card"><div class="cp-list">${members.length?members.map(member=>`<article class="cp-request"><div><h3>${esc(member.name||member.email)}</h3><p>${esc(member.email)} · ${esc(roleName(member.role))}</p></div>${owner?`<button class="cp-secondary" data-cp-action="open-member-edit" data-id="${member.id}">Gestionar</button>`:''}</article>`).join(''):'<div class="cp-empty">Solo tú tienes acceso por ahora.</div>'}</div></section>`; }
   function profilePage(){ const meta=state.user?.user_metadata||{}; return `${pageHeading('Mi perfil','Tu perfil es privado y funciona en todos tus espacios de Quotly.')}<section class="cp-card"><form class="cp-form" id="clientProfileForm"><label>Nombre<input name="full_name" value="${esc(meta.full_name||meta.name||'')}"></label><label>Email<input value="${esc(state.user?.email||'')}" disabled><small>El email no se puede cambiar desde aquí.</small></label><div class="split"><label>Teléfono<input name="phone" value="${esc(meta.phone||'')}"></label><label>Puesto<input name="job_title" value="${esc(meta.job_title||'')}"></label></div><label>Sobre mí<textarea name="bio">${esc(meta.bio||'')}</textarea></label><div class="cp-actions"><button class="cp-primary">Guardar perfil</button><button type="button" class="cp-danger" data-cp-action="logout">Cerrar sesión</button></div></form></section><section class="cp-card" style="margin-top:16px"><h3>Mis restaurantes</h3><div class="cp-list">${(state.portals||[]).map(portal=>`<button class="cp-space-option" data-cp-action="switch-portal" data-id="${portal.id}"><span><strong>${esc(portal.restaurantName)}</strong><small>${esc(roleName(portal.role))}</small></span><b>Entrar</b></button>`).join('')}</div></section>`; }
   function webPage(){ return `${pageHeading('Mi web','Edición visual con LandingSite estará disponible aquí cuando conectemos su API oficial.')}<div class="cp-card"><h3>Próximamente</h3><p>Tu equipo podrá seleccionar una zona de la web, describir el cambio y publicarlo desde este panel. No publicaremos una integración simulada: esta función se activará cuando LandingSite facilite la API oficial.</p>${state.data.restaurant.publicUrl?`<div class="cp-actions" style="margin-top:18px"><a class="cp-primary" href="${esc(state.data.restaurant.publicUrl)}" target="_blank" rel="noopener">Ver web publicada</a></div>`:''}</div>`; }
-  function render(){ const rootEl=root(); if(!rootEl||!state.data) return; const current=nav().find(item=>item.id===state.view)||nav()[0]; const content={inicio:dashboard,web:webPage,solicitudes:requestsPage,calendario:calendarPage,plan:planPage,informes:reportsPage,restaurante:restaurantPage,equipo:teamPage,perfil:profilePage}[current.id](); rootEl.innerHTML=`<div class="cp-shell"><aside class="cp-sidebar"><div class="cp-brand"><b>Q</b><div><strong>Quotly</strong><small>Panel de restaurante</small></div></div><nav class="cp-nav">${nav().map(item=>`<button class="${state.view===item.id?'active':''}" data-cp-view="${item.id}"><i>${item.id==='inicio'?'⌂':'·'}</i>${item.label}</button>`).join('')}</nav><div class="cp-sidebar-bottom"><button class="cp-space-switch" data-cp-action="open-profile"><span>${esc(state.data.restaurant.name)}</span><b>⌄</b></button><button class="cp-logout" data-cp-action="logout">Cerrar sesión</button></div></aside><main class="cp-main"><header class="cp-topbar"><div><h1>${esc(current.label)}</h1><p>${esc(state.data.restaurant.name)}</p></div><div class="cp-user"><span>${(state.data.notifications||[]).filter(n=>!n.read_at).length} avisos</span><i class="cp-avatar">${initials(state.user?.user_metadata?.full_name||state.user?.email)}</i></div></header><section class="cp-content">${content}</section></main><nav class="cp-mobile-menu">${nav().slice(0,6).map(item=>`<button class="${state.view===item.id?'active':''}" data-cp-view="${item.id}">${item.label}</button>`).join('')}</nav></div><div id="clientModal"></div><div class="cp-toast" id="clientToast"></div>`; }
+  function render(){
+    const rootEl=root(); if(!rootEl||!state.data) return;
+    const current=nav().find(item=>item.id===state.view)||nav()[0];
+    const content={inicio:dashboard,web:webPage,solicitudes:requestsPage,calendario:calendarPage,plan:planPage,informes:reportsPage,restaurante:restaurantPage,equipo:teamPage,perfil:profilePage}[current.id]();
+    document.body.classList.toggle('cp-menu-open', state.mobileMenu);
+    rootEl.innerHTML=`<div class="cp-shell ${state.mobileMenu?'menu-open':''}">
+      <aside class="cp-sidebar" id="clientSidebar" aria-label="Navegación del panel">
+        <div class="cp-brand"><b>Q</b><div><strong>Quotly</strong><small>Panel de restaurante</small></div><button class="cp-sidebar-close" data-cp-action="close-mobile-menu" aria-label="Cerrar menú">×</button></div>
+        <nav class="cp-nav">${nav().map(item=>`<button class="${state.view===item.id?'active':''}" data-cp-view="${item.id}"><i>${item.id==='inicio'?'⌂':'·'}</i>${item.label}</button>`).join('')}</nav>
+        <div class="cp-sidebar-bottom"><button class="cp-space-switch" data-cp-action="open-profile"><span>${esc(state.data.restaurant.name)}</span><b>⌄</b></button><button class="cp-logout" data-cp-action="logout">Cerrar sesión</button></div>
+      </aside>
+      <button class="cp-mobile-backdrop" data-cp-action="close-mobile-menu" aria-label="Cerrar menú"></button>
+      <main class="cp-main"><header class="cp-topbar"><div class="cp-topbar-title"><button class="cp-menu-toggle" data-cp-action="toggle-mobile-menu" aria-label="Abrir menú" aria-controls="clientSidebar" aria-expanded="${state.mobileMenu}">☰</button><div><h1>${esc(current.label)}</h1><p>${esc(state.data.restaurant.name)}</p></div></div><div class="cp-user"><span>${(state.data.notifications||[]).filter(n=>!n.read_at).length} avisos</span><i class="cp-avatar">${initials(state.user?.user_metadata?.full_name||state.user?.email)}</i></div></header><section class="cp-content">${content}</section></main>
+    </div><div id="clientModal"></div><div class="cp-toast" id="clientToast"></div>`;
+  }
   function modal(title, body){ document.querySelector('#clientModal').innerHTML=`<div class="cp-modal-backdrop"><section class="cp-modal"><div class="cp-modal-head"><div><span class="cp-label">QUOTLY</span><h2>${esc(title)}</h2></div><button class="cp-modal-close" data-cp-action="close-modal">×</button></div><div class="cp-modal-body">${body}</div></section></div>`; }
   function closeModal(){ const el=document.querySelector('#clientModal'); if(el) el.innerHTML=''; }
   async function bootstrap(portalId){ const result=await api('bootstrap',{portalId},'GET'); state.portals=result.portals||[]; if(!portalId){ renderPicker(); return; } state.portalId=portalId; state.data=result.data; state.preview=result.mode==='maintenance-preview'; state.view='inicio'; render(); }
@@ -132,13 +146,15 @@
   }
   async function action(event){
     const target=event.target.closest('[data-cp-action],[data-cp-view]');if(!target)return;
-    const view=target.dataset.cpView;if(view){state.view=view;render();return;}
+    const view=target.dataset.cpView;if(view){state.view=view;state.mobileMenu=false;render();return;}
     const name=target.dataset.cpAction;
+    if(name==='toggle-mobile-menu'){state.mobileMenu=!state.mobileMenu;render();return;}
+    if(name==='close-mobile-menu'){state.mobileMenu=false;render();return;}
     if(name==='logout')return logout();if(name==='close-modal')return closeModal();if(name==='open-request')return openRequest();if(name==='open-request-detail')return openRequestDetail(target.dataset.id);if(name==='open-attachment')return openAttachment(target.dataset.path);if(name==='open-client-invite')return inviteForm();if(name==='open-member-edit')return memberForm(target.dataset.id);if(name==='open-pause')return pauseForm();
     if(name==='open-extra-package'){
       try{await api('request-extra-package',{portalId:state.portalId,title:'Solicitud de paquete adicional',description:'El restaurante quiere solicitar un paquete adicional de cambios.'});showToast('Solicitud registrada. Se abrira WhatsApp para concretarla.');location.href='https://wa.me/34674248322?text='+encodeURIComponent(`Hola, soy ${state.data.restaurant.name} y quiero solicitar un paquete adicional de cambios.`);}catch(error){showToast(error.message);}return;
     }
-    if(name==='communicate-payment')return communicatePayment();if(name==='open-profile'){state.view='perfil';render();return;}if(name==='switch-portal'){const url=new URL(location.href);url.searchParams.set('clientPortal',target.dataset.id);url.searchParams.delete('clientInvite');location.href=url.toString();return;}
+    if(name==='communicate-payment')return communicatePayment();if(name==='open-profile'){state.view='perfil';state.mobileMenu=false;render();return;}if(name==='switch-portal'){const url=new URL(location.href);url.searchParams.set('clientPortal',target.dataset.id);url.searchParams.delete('clientInvite');location.href=url.toString();return;}
     if(name==='cancel-request'){
       if(!confirm('Cancelar esta solicitud? Si el equipo ya la ha empezado, los cambios se consumiran.'))return;
       try{await api('cancel-request',{portalId:state.portalId,requestId:target.dataset.id});closeModal();await bootstrap(state.portalId);showToast('Solicitud cancelada.');}catch(error){showToast(error.message);}
@@ -153,4 +169,12 @@
     if(form.id==='clientPauseForm'){const data=new FormData(form);try{await api(data.get('type')==='pause'?'request-service-pause':'request-cancellation',{portalId:state.portalId,serviceId:data.get('serviceId'),plannedDays:data.get('plannedDays'),title:data.get('type')==='pause'?'Solicitud de pausa':'Solicitud de baja',description:data.get('description')});closeModal();await bootstrap(state.portalId);showToast('Solicitud enviada.');}catch(error){showToast(error.message);}return;}
     if(form.id==='clientProfileForm')return profileSave(form);
   }
+  function handleClientKeydown(event){
+    if(event.key==='Escape'&&state.mobileMenu){
+      state.mobileMenu=false;
+      render();
+    }
+  }
+  document.removeEventListener('keydown',handleClientKeydown);
+  document.addEventListener('keydown',handleClientKeydown);
 })();
