@@ -180,6 +180,7 @@ async function portalPayload(portal, clientMember, caller, maintenanceMember = n
   const reports = (state.reports || []).filter(item => item.restaurantId === restaurant.id).map(item => ({ id: item.id, month: item.month, status: item.status, generatedAt: item.generatedAt, filePath: item.filePath || '' }));
   const tasks = (state.tasks || []).filter(item => item.restaurantId === restaurant.id && item.clientRequestId).map(item => ({ id: item.id, requestId: item.clientRequestId, title: item.title, type: item.type, status: item.status, requestedAt: item.requestedAt, startedAt: item.startedAt, completedAt: item.completedAt }));
   const canManageClientTeam = clientMember?.role === 'owner' || maintenanceMember?.role === 'owner';
+  const canReturnToMaintenance = Boolean(maintenanceMember);
   const portalMembers = canManageClientTeam ? await restRows(`cuotly_client_members?portal_id=eq.${encodeURIComponent(portal.id)}&active=is.true&select=id,name,email,role,created_at&order=created_at.asc`) : [];
   const notices = await restRows(`cuotly_client_notifications?user_id=eq.${encodeURIComponent(caller.id)}&portal_id=eq.${encodeURIComponent(portal.id)}&select=id,title,body,created_at,read_at&order=created_at.desc&limit=30`);
   return {
@@ -187,7 +188,7 @@ async function portalPayload(portal, clientMember, caller, maintenanceMember = n
     restaurant: { name: restaurant.name, email: restaurant.email || '', phone: restaurant.phone || '', address: restaurant.address || '', city: restaurant.city || '', openingHours: restaurant.openingHours || '', socialLinks: restaurant.socialLinks || '', logoUrl: restaurant.logoUrl || '', publicUrl: portal.public_url || extractPublicUrl(restaurant) },
     member: clientMember ? { role: clientMember.role, name: clientMember.name || userName(caller), email: clientMember.email } : null,
     services, requests: requests.map(safeRequest), tasks, payments, reports, clientMembers: portalMembers, notifications: notices,
-    permissions: { canManageClientTeam },
+    permissions: { canManageClientTeam, canReturnToMaintenance },
   };
 }
 async function listClientPortals(caller) {
@@ -252,7 +253,8 @@ export default async function handler(req, res) {
       const portal = await portalById(portalId);
       if (!portal || portal.status !== 'active') return res.status(404).json({ error: 'No encontramos este panel.' });
       const client = await clientMembership(caller, portal.id);
-      if (client) return res.status(200).json({ ok: true, mode: 'client', portals: await listClientPortals(caller), data: await portalPayload(portal, client, caller) });
+      const maintenance = await maintenanceMembership(caller, portal.workspace_id);
+      if (client) return res.status(200).json({ ok: true, mode: 'client', portals: await listClientPortals(caller), data: await portalPayload(portal, client, caller, maintenance) });
       const manager = await ensureMaintenanceAccess(caller, portal, 'bootstrap');
       return res.status(200).json({ ok: true, mode: 'maintenance-preview', portals: await listClientPortals(caller), data: await portalPayload(portal, null, caller, manager) });
     }
