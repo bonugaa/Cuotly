@@ -170,7 +170,7 @@ function safeService(state, service, requests) {
   const p = { presencia: 'Plan Presencia', impulso: 'Plan Impulso', premium: 'Plan Premium', menu: 'Menu Diario' };
   return { id: service.id, planCode: service.planCode, name: p[service.planCode] || service.planCode, status: service.status, startDate: service.startDate, cycle: cycleFor(service), monthlyBase: Number(service.monthlyBase || 0), quotas: currentUsage(state, service, requests), pause: service.pauseHistory?.at(-1) || null };
 }
-async function portalPayload(portal, clientMember, caller) {
+async function portalPayload(portal, clientMember, caller, maintenanceMember = null) {
   const state = clone(portal.workspace?.state || {});
   const restaurant = restaurantInPortal(portal);
   if (!restaurant) throw new Error('No encontramos el restaurante de este panel.');
@@ -179,13 +179,15 @@ async function portalPayload(portal, clientMember, caller) {
   const payments = (state.payments || []).filter(item => item.restaurantId === restaurant.id).map(item => ({ id: item.id, serviceId: item.serviceId, cycleStart: item.cycleStart, cycleEnd: item.cycleEnd, dueDate: item.dueDate, total: item.invoiceTotal, status: item.status, paidAt: item.paidAt || '', invoiceUrl: item.invoiceUrl || '' }));
   const reports = (state.reports || []).filter(item => item.restaurantId === restaurant.id).map(item => ({ id: item.id, month: item.month, status: item.status, generatedAt: item.generatedAt, filePath: item.filePath || '' }));
   const tasks = (state.tasks || []).filter(item => item.restaurantId === restaurant.id && item.clientRequestId).map(item => ({ id: item.id, requestId: item.clientRequestId, title: item.title, type: item.type, status: item.status, requestedAt: item.requestedAt, startedAt: item.startedAt, completedAt: item.completedAt }));
-  const portalMembers = clientMember?.role === 'owner' ? await restRows(`cuotly_client_members?portal_id=eq.${encodeURIComponent(portal.id)}&active=is.true&select=id,name,email,role,created_at&order=created_at.asc`) : [];
+  const canManageClientTeam = clientMember?.role === 'owner' || maintenanceMember?.role === 'owner';
+  const portalMembers = canManageClientTeam ? await restRows(`cuotly_client_members?portal_id=eq.${encodeURIComponent(portal.id)}&active=is.true&select=id,name,email,role,created_at&order=created_at.asc`) : [];
   const notices = await restRows(`cuotly_client_notifications?user_id=eq.${encodeURIComponent(caller.id)}&portal_id=eq.${encodeURIComponent(portal.id)}&select=id,title,body,created_at,read_at&order=created_at.desc&limit=30`);
   return {
     portal: { id: portal.id, workspaceId: portal.workspace_id, restaurantId: restaurant.id, status: portal.status, publicUrl: portal.public_url || extractPublicUrl(restaurant), allowAdminAccess: portal.allow_admin_access },
     restaurant: { name: restaurant.name, email: restaurant.email || '', phone: restaurant.phone || '', address: restaurant.address || '', city: restaurant.city || '', openingHours: restaurant.openingHours || '', socialLinks: restaurant.socialLinks || '', logoUrl: restaurant.logoUrl || '', publicUrl: portal.public_url || extractPublicUrl(restaurant) },
     member: clientMember ? { role: clientMember.role, name: clientMember.name || userName(caller), email: clientMember.email } : null,
     services, requests: requests.map(safeRequest), tasks, payments, reports, clientMembers: portalMembers, notifications: notices,
+    permissions: { canManageClientTeam },
   };
 }
 async function listClientPortals(caller) {
@@ -251,8 +253,8 @@ export default async function handler(req, res) {
       if (!portal || portal.status !== 'active') return res.status(404).json({ error: 'No encontramos este panel.' });
       const client = await clientMembership(caller, portal.id);
       if (client) return res.status(200).json({ ok: true, mode: 'client', portals: await listClientPortals(caller), data: await portalPayload(portal, client, caller) });
-      await ensureMaintenanceAccess(caller, portal, 'bootstrap');
-      return res.status(200).json({ ok: true, mode: 'maintenance-preview', portals: await listClientPortals(caller), data: await portalPayload(portal, null, caller) });
+      const manager = await ensureMaintenanceAccess(caller, portal, 'bootstrap');
+      return res.status(200).json({ ok: true, mode: 'maintenance-preview', portals: await listClientPortals(caller), data: await portalPayload(portal, null, caller, manager) });
     }
 
     if (action === 'create-portal') {
