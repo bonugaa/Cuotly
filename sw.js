@@ -1,4 +1,4 @@
-const CACHE_NAME = 'cuotly-v24-client-mobile-menu';
+const CACHE_NAME = 'cuotly-v25-return-maintenance';
 const ASSETS = [
   './',
   './index.html',
