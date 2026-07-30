@@ -839,7 +839,7 @@ async function openClientRequestInbox(restaurantId) {
             <div>
               <strong>${esc(request.title)}</strong>
               <p>${esc(request.description || 'Sin descripcion')}</p>
-              <small>${formatDateTime(request.requestedAt)} · ${esc(STATUS_LABELS[request.status] || request.status)} · ${esc(request.kind)}</small>
+              <small>${formatDateTime(request.requestedAt)} · ${esc(STATUS_LABELS[request.status] || request.status)} · ${request.source === 'web_editor' ? 'Solicitada desde Editar mi web' : esc(request.kind)}</small>
             </div>
             <div class="modal-actions compact">
               <button class="secondary-button" data-action="open-client-request-chat" data-portal="${restaurant.clientPortalId}" data-request="${request.id}" data-title="${esc(request.title)}">Chat</button>
@@ -2711,6 +2711,7 @@ function openRestaurantModal(id) {
         <label>Ciudad<input name="city" value="${esc(restaurant.city || 'Madrid')}"></label>
         <label>Estado<select name="status"><option value="active" ${restaurant.status !== 'paused' ? 'selected' : ''}>Activo</option><option value="paused" ${restaurant.status === 'paused' ? 'selected' : ''}>Pausado</option></select></label>
         <label class="wide">URL publica de la web<input name="publicUrl" type="url" value="${esc(restaurant.publicUrl || '')}" placeholder="https://www.restaurante.es"></label>
+        ${isOwner() ? `<label class="wide">Enlace editor de LandingSite<input name="editorUrl" type="url" value="${esc(restaurant.editorUrl || '')}" placeholder="https://landingsite.ai/..."><small>Solo el propietario de mantenimiento puede gestionar este acceso.</small></label>` : ''}
         <label class="wide">Notas<textarea name="notes" placeholder="Notas internas...">${esc(restaurant.notes || '')}</textarea></label>
       </div>
       <div class="modal-actions"><button type="button" class="secondary-button" data-action="close-modal">Cancelar</button><button class="primary-button">${isEdit ? 'Guardar ficha' : 'Crear restaurante'}</button></div>
@@ -3052,6 +3053,7 @@ function handleRestaurantSubmit(form) {
     address: data.address.trim(),
     city: data.city.trim(),
     publicUrl: data.publicUrl.trim(),
+    editorUrl: isOwner() ? data.editorUrl.trim() : (existing?.editorUrl || ''),
     notes: data.notes.trim(),
     status: data.status,
     createdAt: existing?.createdAt || iso(),

@@ -1,6 +1,6 @@
 (() => {
   const query = () => new URLSearchParams(location.search);
-  const state = { client:null, user:null, getToken:null, portalId:'', data:null, portals:[], view:'inicio', preview:false, busy:false, mobileMenu:false };
+  const state = { client:null, user:null, getToken:null, portalId:'', data:null, portals:[], view:'inicio', preview:false, busy:false, mobileMenu:false, webGuideLanguage:localStorage.getItem('cuotly_web_guide_language') || 'es' };
   const root = () => document.querySelector('#clientPanelRoot');
   const esc = value => String(value ?? '').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#039;');
   const formatDate = value => value ? new Intl.DateTimeFormat('es-ES',{day:'numeric',month:'short',year:'numeric'}).format(new Date(value)) : 'Sin fecha';
@@ -18,11 +18,13 @@
   function isClient(){ return Boolean(state.data?.member); }
   function canEdit(){ return ['owner','editor'].includes(state.data?.member?.role); }
   function canManageClientTeam(){ return state.data?.permissions?.canManageClientTeam===true; }
+  function canOpenWebEditor(){ return state.data?.permissions?.canOpenWebEditor===true; }
+  function canManageWebGuide(){ return state.data?.permissions?.canManageWebGuide===true; }
   function nav(){ return [{id:'inicio',label:'Inicio'},{id:'web',label:'Mi web'},{id:'solicitudes',label:'Solicitudes'},{id:'calendario',label:'Calendario'},{id:'plan',label:'Plan y pagos'},{id:'informes',label:'Informes'},{id:'restaurante',label:'Mi restaurante'},{id:'equipo',label:'Mi equipo'},{id:'perfil',label:'Perfil'}]; }
   function pageHeading(title, copy='', actions=''){ return `<div class="cp-page-heading"><div><h2>${esc(title)}</h2>${copy?`<p>${esc(copy)}</p>`:''}</div><div class="cp-actions">${actions}</div></div>`; }
   function serviceCard(service){ const quotas=Object.entries(service.quotas||{}); return `<section class="cp-card cp-service ${service.planCode==='menu'?'menu':''}"><span class="cp-label">SERVICIO ACTIVO</span><h3>${esc(service.name)}</h3><p>Renovacion: ${formatDate(service.cycle?.end)} · ${service.status==='active'?'Activo':'No disponible'}</p><div class="cp-quota-list">${quotas.map(([type,item])=>`<div class="cp-quota"><span>${esc(({small:'Cambios pequenos',medium:'Cambios medianos',large:'Cambios grandes',photos:'Fotografias',menu_update:'Actualizaciones'}[type]||type))}</span><b>${item.available}/${item.limit}</b></div>`).join('')}</div></section>`; }
   function dashboard(){ const d=state.data, services=d.services||[], requests=d.requests||[]; const active=requests.filter(item=>!['completed','cancelled','rejected'].includes(item.status)); const next=services.map(item=>item.cycle?.end).filter(Boolean).sort()[0]; return `${pageHeading(`Hola, ${state.user?.user_metadata?.full_name || state.user?.email?.split('@')[0] || 'bienvenido'}`,d.restaurant?.name || '')}${state.preview?'<div class="cp-banner">Estás viendo este panel como parte del mantenimiento. Los botones de cliente están desactivados.</div>':''}<div class="cp-grid four"><section class="cp-card cp-stat"><span class="cp-label">RESTAURANTE</span><strong>${esc(d.restaurant.name)}</strong><small>Panel privado</small></section><section class="cp-card cp-stat"><span class="cp-label">SOLICITUDES ABIERTAS</span><strong>${active.length}</strong><small>En seguimiento</small></section><section class="cp-card cp-stat"><span class="cp-label">SIGUIENTE RENOVACION</span><strong>${next?formatDate(next):'--'}</strong><small>Consulta tu plan</small></section><section class="cp-card cp-stat"><span class="cp-label">SERVICIOS</span><strong>${services.length}</strong><small>Activos para tu restaurante</small></section></div><div class="cp-grid two" style="margin-top:16px"><section class="cp-card"><h3>Tu saldo de cambios</h3><p>Solo se muestran los cambios que puedes solicitar al equipo de mantenimiento.</p><div class="cp-grid two" style="margin-top:14px">${services.map(serviceCard).join('')||'<div class="cp-empty">No hay servicios activos.</div>'}</div></section><section class="cp-card"><h3>Acciones rápidas</h3><p>Pide un cambio, consulta una solicitud o revisa los datos de tu restaurante.</p><div class="cp-actions" style="margin-top:18px">${canEdit()?'<button class="cp-primary" data-cp-action="open-request">Solicitar cambio</button>':''}<button class="cp-secondary" data-cp-view="solicitudes">Ver solicitudes</button><button class="cp-secondary" data-cp-view="plan">Ver plan y pagos</button></div></section></div><section class="cp-card" style="margin-top:16px"><h3>Actividad reciente</h3><div class="cp-list" style="margin-top:13px">${requests.slice(0,5).map(requestCard).join('')||'<div class="cp-empty">Todavía no hay solicitudes.</div>'}</div></section>`; }
-  function requestCard(request){ return `<article class="cp-request" data-cp-action="open-request-detail" data-id="${request.id}"><div><h3>${esc(request.title)}</h3><p>${esc(request.description || 'Sin descripción')}</p><div class="cp-meta">${formatDate(request.requestedAt)} · ${request.selectedAllocations?.map(item=>`${item.quantity} ${item.type}`).join(', ') || 'Sin cambios asignados'}</div></div><div>${pill(request.status)}</div></article>`; }
+  function requestCard(request){ return `<article class="cp-request" data-cp-action="open-request-detail" data-id="${request.id}"><div><h3>${esc(request.title)}</h3><p>${esc(request.description || 'Sin descripción')}</p><div class="cp-meta">${formatDate(request.requestedAt)} · ${request.source==='web_editor'?'Solicitada desde Editar mi web':'Sin cambios asignados'}${request.source!=='web_editor'&&request.selectedAllocations?.length?` · ${request.selectedAllocations.map(item=>`${item.quantity} ${item.type}`).join(', ')}`:''}</div></div><div>${pill(request.status)}</div></article>`; }
   function requestsPage(){ const requests=state.data.requests||[]; return `${pageHeading('Solicitudes','Sigue cada cambio que has pedido al equipo.',canEdit()?'<button class="cp-primary" data-cp-action="open-request">Solicitar cambio</button>':'') }<div class="cp-list">${requests.map(requestCard).join('')||'<div class="cp-empty">No hay solicitudes todavía.</div>'}</div>`; }
   function calendarPage(){ const rows=[...(state.data.tasks||[])].sort((a,b)=>new Date(a.requestedAt)-new Date(b.requestedAt)); return `${pageHeading('Calendario','Cambios y publicaciones programadas para tu restaurante.')}<section class="cp-card"><table class="cp-table"><thead><tr><th>Fecha</th><th>Trabajo</th><th>Tipo</th><th>Estado</th></tr></thead><tbody>${rows.map(task=>`<tr><td>${formatDate(task.startedAt||task.requestedAt)}</td><td>${esc(task.title)}</td><td>${esc(task.type)}</td><td>${pill(task.status)}</td></tr>`).join('')||'<tr><td colspan="4">Todavía no hay trabajos programados.</td></tr>'}</tbody></table></section>`; }
   function planPage(){ const d=state.data; return `${pageHeading('Plan y pagos','Consulta tus servicios, cambios disponibles y facturas.') }<div class="cp-grid two">${(d.services||[]).map(serviceCard).join('')||'<div class="cp-empty">No hay servicios activos.</div>'}</div><section class="cp-card" style="margin-top:16px"><h3>Pagos y facturas</h3><table class="cp-table"><thead><tr><th>Ciclo</th><th>Vencimiento</th><th>Importe</th><th>Estado</th><th></th></tr></thead><tbody>${(d.payments||[]).map(payment=>`<tr><td>${formatDate(payment.cycleStart)} - ${formatDate(payment.cycleEnd)}</td><td>${formatDate(payment.dueDate)}</td><td>${Number(payment.total||0).toFixed(2)} €</td><td>${pill(payment.status)}</td><td>${payment.invoiceUrl?`<a class="cp-secondary" href="${esc(payment.invoiceUrl)}" target="_blank" rel="noopener">Factura</a>`:''}</td></tr>`).join('')||'<tr><td colspan="5">No hay pagos disponibles.</td></tr>'}</tbody></table><div class="cp-actions" style="margin-top:16px"><button class="cp-secondary" data-cp-action="communicate-payment">Comunicar pago realizado</button><button class="cp-secondary" data-cp-action="open-extra-package">Solicitar paquete adicional</button>${state.data.member?.role==='owner'?'<button class="cp-danger" data-cp-action="open-pause">Solicitar pausa o baja</button>':''}</div></section>`; }
@@ -30,7 +32,28 @@
   function restaurantPage(){ const restaurant=state.data.restaurant; return `${pageHeading('Mi restaurante','Los datos de contacto que aparecerán en tu ficha.')}<section class="cp-card"><form class="cp-form" id="clientRestaurantForm"><div class="split"><label>Nombre<input name="name" value="${esc(restaurant.name)}" ${canEdit()?'':'disabled'}></label><label>Email<input type="email" name="email" value="${esc(restaurant.email)}" ${canEdit()?'':'disabled'}></label></div><div class="split"><label>Teléfono<input name="phone" value="${esc(restaurant.phone)}" ${canEdit()?'':'disabled'}></label><label>Ciudad<input name="city" value="${esc(restaurant.city)}" ${canEdit()?'':'disabled'}></label></div><label>Dirección<input name="address" value="${esc(restaurant.address)}" ${canEdit()?'':'disabled'}></label><label>URL pública de tu web<input value="${esc(restaurant.publicUrl)}" disabled><small class="cp-url">Esta dirección solo la gestiona el equipo de mantenimiento.</small></label>${canEdit()?'<div class="cp-actions"><button class="cp-primary">Guardar cambios</button></div>':''}</form></section>`; }
   function teamPage(){ const members=state.data.clientMembers||[]; const restaurantOwner=state.data.member?.role==='owner'; const canInvite=canManageClientTeam(); return `${pageHeading('Mi equipo','Personas de tu restaurante que pueden acceder a este panel.',canInvite?'<button class="cp-primary" data-cp-action="open-client-invite">Añadir persona</button>':'')}<section class="cp-card"><div class="cp-list">${members.length?members.map(member=>`<article class="cp-request"><div><h3>${esc(member.name||member.email)}</h3><p>${esc(member.email)} · ${esc(roleName(member.role))}</p></div>${restaurantOwner?`<button class="cp-secondary" data-cp-action="open-member-edit" data-id="${member.id}">Gestionar</button>`:''}</article>`).join(''):'<div class="cp-empty">Solo tú tienes acceso por ahora.</div>'}</div></section>`; }
   function profilePage(){ const meta=state.user?.user_metadata||{}; return `${pageHeading('Mi perfil','Tu perfil es privado y funciona en todos tus espacios de Quotly.')}<section class="cp-card"><form class="cp-form" id="clientProfileForm"><label>Nombre<input name="full_name" value="${esc(meta.full_name||meta.name||'')}"></label><label>Email<input value="${esc(state.user?.email||'')}" disabled><small>El email no se puede cambiar desde aquí.</small></label><div class="split"><label>Teléfono<input name="phone" value="${esc(meta.phone||'')}"></label><label>Puesto<input name="job_title" value="${esc(meta.job_title||'')}"></label></div><label>Sobre mí<textarea name="bio">${esc(meta.bio||'')}</textarea></label><div class="cp-actions"><button class="cp-primary">Guardar perfil</button><button type="button" class="cp-danger" data-cp-action="logout">Cerrar sesión</button></div></form></section><section class="cp-card" style="margin-top:16px"><h3>Mis restaurantes</h3><div class="cp-list">${(state.portals||[]).map(portal=>`<button class="cp-space-option" data-cp-action="switch-portal" data-id="${portal.id}"><span><strong>${esc(portal.restaurantName)}</strong><small>${esc(roleName(portal.role))}</small></span><b>Entrar</b></button>`).join('')}</div></section>`; }
-  function webPage(){ return `${pageHeading('Mi web','Edición visual con LandingSite estará disponible aquí cuando conectemos su API oficial.')}<div class="cp-card"><h3>Próximamente</h3><p>Tu equipo podrá seleccionar una zona de la web, describir el cambio y publicarlo desde este panel. No publicaremos una integración simulada: esta función se activará cuando LandingSite facilite la API oficial.</p>${state.data.restaurant.publicUrl?`<div class="cp-actions" style="margin-top:18px"><a class="cp-primary" href="${esc(state.data.restaurant.publicUrl)}" target="_blank" rel="noopener">Ver web publicada</a></div>`:''}</div>`; }
+  function guideItemCard(item,index){
+    const media = `${item.imageUrl ? `<img class="cp-guide-image" src="${esc(item.imageUrl)}" alt="Guia visual del paso ${index + 1}">` : ''}${item.videoUrl ? `<a class="cp-guide-video" href="${esc(item.videoUrl)}" target="_blank" rel="noopener">Ver video del paso</a>` : ''}`;
+    return `<article class="cp-guide-step"><span class="cp-guide-number">${index + 1}</span><div class="cp-guide-copy"><h3>${esc(item.title)}</h3><p>${esc(item.body)}</p>${media}<button class="cp-secondary" data-cp-action="open-web-help">Necesito ayuda con este paso</button></div></article>`;
+  }
+  function webPage(){
+    const d = state.data;
+    const canOpen = canOpenWebEditor();
+    const editorAvailable = d.portal?.editorAvailable === true;
+    const accessAction = editorAvailable
+      ? (canOpen ? '<button class="cp-primary" data-cp-action="open-web-editor">Abrir editor</button>' : '<button class="cp-secondary" disabled>Acceso al editor restringido</button>')
+      : (canEdit() ? '<button class="cp-primary" data-cp-action="request-editor-access">Solicitar acceso al editor</button>' : '<button class="cp-secondary" disabled>Editor pendiente de configurar</button>');
+    const publicAction = d.restaurant?.publicUrl ? '<button class="cp-secondary" data-cp-action="open-public-web">Ver mi web</button>' : '<button class="cp-secondary" disabled>Web publica pendiente</button>';
+    const helpAction = canEdit() ? '<button class="cp-secondary" data-cp-action="open-web-help">Solicitar ayuda</button>' : '<button class="cp-secondary" disabled>Solicitar ayuda</button>';
+    const guideEditor = canManageWebGuide() ? '<button class="cp-secondary" data-cp-action="open-web-guide-editor">Editar guia</button>' : '';
+    return `${pageHeading('Mi web','Edita tu web en LandingSite o pide ayuda al mantenimiento.')}
+      <section class="cp-web-hero cp-card">
+        <div><span class="cp-label">TU ESPACIO WEB</span><h3>Gestiona tu web con claridad</h3><p>Los cambios hechos en LandingSite se publican desde LandingSite y no consumen los cambios de tu plan de mantenimiento.</p></div>
+        <div class="cp-actions">${accessAction}${publicAction}${helpAction}</div>
+      </section>
+      <section class="cp-banner cp-web-reminder"><strong>Antes de publicar:</strong> revisa la version movil, el idioma y que la informacion importante sea correcta.</section>
+      <section class="cp-card cp-guide-entry"><div><span class="cp-label">GUIA GENERAL</span><h3>Aprende a editar tu web</h3><p>Consulta los pasos cuando los necesites, en espanol o en ingles.</p></div><div class="cp-actions"><button class="cp-secondary" data-cp-action="open-web-guide">Ver guia</button>${guideEditor}</div></section>`;
+  }
   function render(){
     const rootEl=root(); if(!rootEl||!state.data) return;
     const current=nav().find(item=>item.id===state.view)||nav()[0];
@@ -153,6 +176,57 @@
     if(!services.length){showToast('No hay servicios disponibles para gestionar.');return;}
     modal('Solicitar pausa o baja',`<form class="cp-form" id="clientPauseForm"><label>Servicio<select name="serviceId">${services.map(item=>`<option value="${item.id}">${esc(item.name)}${item.planCode==='menu'?' (solo baja)':''}</option>`).join('')}</select></label><label>Accion<select name="type"><option value="pause">Solicitar pausa (maximo 31 dias)</option><option value="cancel">Solicitar baja</option></select></label><label>Duracion solicitada de la pausa<input name="plannedDays" type="number" min="1" max="31" value="31"><small>Solo se aplica a los planes Presencia, Impulso o Premium. El servicio se reanudara automaticamente al terminar.</small></label><label>Explicacion<textarea name="description" required placeholder="Indica el motivo y la fecha deseada."></textarea></label><div class="cp-modal-actions"><button type="button" class="cp-secondary" data-cp-action="close-modal">Cancelar</button><button class="cp-primary">Enviar solicitud</button></div></form>`);
   }
+  function editorReminderKey(){ return `cuotly_editor_reminder_${state.portalId}_${state.user?.id || 'guest'}`; }
+  function openEditorReminder(){
+    modal('Antes de editar tu web',`<div class="cp-checklist"><p>En LandingSite los cambios se publican desde su propio editor y no consumen cambios de tu mantenimiento.</p><label><input type="checkbox"> He revisado la version movil.</label><label><input type="checkbox"> He comprobado el idioma.</label><label><input type="checkbox"> La informacion que voy a cambiar es correcta.</label></div><div class="cp-modal-actions"><button type="button" class="cp-secondary" data-cp-action="open-web-editor-hide-reminder">No volver a mostrar</button><button type="button" class="cp-primary" data-cp-action="open-web-editor-confirm">Aceptar y abrir editor</button></div>`);
+  }
+  function openWebGuide(){
+    const language=state.webGuideLanguage==='en'?'en':'es';
+    const guide=Array.isArray(state.data.webGuide?.[language])?state.data.webGuide[language]:[];
+    modal('Guia para editar tu web',`<section class="cp-guide-toolbar"><div><p>Repasa el proceso antes de abrir LandingSite. Los cambios se publican desde su editor.</p></div><div class="cp-language-toggle"><button class="${language==='es'?'active':''}" data-cp-action="set-web-guide-language" data-language="es">ES</button><button class="${language==='en'?'active':''}" data-cp-action="set-web-guide-language" data-language="en">EN</button></div></section><section class="cp-guide-list">${guide.map(guideItemCard).join('')||'<div class="cp-empty">La guia estara disponible proximamente.</div>'}</section>`);
+  }
+  async function launchWebEditor(){
+    const tab=window.open('about:blank','_blank');
+    if(tab) tab.opener=null;
+    try{
+      const result=await api('open-web-editor',{portalId:state.portalId});
+      if(tab) tab.location.href=result.url;
+      else window.open(result.url,'_blank','noopener');
+      closeModal();
+    }catch(error){ if(tab) tab.close(); showToast(error.message); }
+  }
+  async function requestEditorAccess(){
+    if(!canEdit()){showToast('Pide al propietario del restaurante que solicite el acceso.');return;}
+    try{await api('request-editor-access',{portalId:state.portalId});await bootstrap(state.portalId);showToast('Solicitud enviada al mantenimiento.');}catch(error){showToast(error.message);}
+  }
+  function openWebHelp(){
+    if(!canEdit()){showToast('Solo el propietario o un administrador del restaurante puede solicitar ayuda.');return;}
+    const services=(state.data.services||[]).filter(item=>item.status==='active');
+    if(!services.length){showToast('No hay servicios activos para abrir una solicitud.');return;}
+    state.pendingFiles=[];
+    modal('Solicitar ayuda con mi web',`<form class="cp-form" id="webHelpForm"><p>Tu mensaje abrira una conversacion con el equipo de mantenimiento y no consumira cambios hasta que el equipo valore la solicitud.</p><label>Servicio<select name="serviceId">${services.map(item=>`<option value="${item.id}">${esc(item.name)}</option>`).join('')}</select></label><label>Asunto<input name="title" required maxlength="120" placeholder="Ej. Necesito ayuda con la carta"></label><label>Explica lo que necesitas<textarea name="description" required maxlength="8000" placeholder="Indica donde esta el problema y que te gustaria conseguir."></textarea></label><label>Captura o PDF (opcional)<input name="attachments" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" multiple><small>Hasta 8 archivos, maximo 6 MB por archivo.</small></label><div class="cp-modal-actions"><button type="button" class="cp-secondary" data-cp-action="close-modal">Cancelar</button><button class="cp-primary">Enviar al mantenimiento</button></div></form>`);
+  }
+  async function submitWebHelp(form){
+    const data=new FormData(form),button=form.querySelector('button.cp-primary');button.disabled=true;button.textContent='Enviando...';
+    try{
+      const attachments=await uploadClientFiles(form.querySelector('[name="attachments"]')?.files||[]);
+      await api('create-request',{portalId:state.portalId,serviceId:data.get('serviceId'),title:`Ayuda con Editar mi web: ${data.get('title')}`,description:data.get('description'),kind:'incident',allocations:[],proposedAllocations:[],analysis:{source:'web_editor'},attachments});
+      closeModal();await bootstrap(state.portalId);state.view='solicitudes';render();showToast('Tu ayuda se ha enviado al mantenimiento.');
+    }catch(error){showToast(error.message);}finally{button.disabled=false;button.textContent='Enviar al mantenimiento';}
+  }
+  function guideFields(language,label){
+    const items=state.data.webGuide?.[language]||[];
+    return `<section class="cp-guide-editor-group"><h3>${label}</h3>${items.map((item,index)=>`<details ${index===0?'open':''}><summary>Paso ${index+1}: ${esc(item.title)}</summary><div class="cp-form cp-guide-editor-fields"><label>Titulo<input name="${language}_title_${index}" maxlength="160" value="${esc(item.title)}"></label><label>Explicacion<textarea name="${language}_body_${index}" maxlength="1800">${esc(item.body)}</textarea></label><label>URL de captura (opcional)<input name="${language}_image_${index}" type="url" value="${esc(item.imageUrl||'')}" placeholder="https://..."></label><label>URL de video (opcional)<input name="${language}_video_${index}" type="url" value="${esc(item.videoUrl||'')}" placeholder="https://..."></label></div></details>`).join('')}</section>`;
+  }
+  function openWebGuideEditor(){
+    if(!canManageWebGuide()){showToast('Solo el propietario de mantenimiento puede editar la guia.');return;}
+    modal('Editar guia de Mi web',`<form class="cp-form" id="webGuideForm"><p>Esta guia se muestra a los restaurantes de este espacio. Puedes anadir enlaces a capturas y videos ya publicados.</p>${guideFields('es','Espanol')}${guideFields('en','English')}<div class="cp-modal-actions"><button type="button" class="cp-secondary" data-cp-action="close-modal">Cancelar</button><button class="cp-primary">Guardar guia</button></div></form>`);
+  }
+  async function saveWebGuide(form){
+    const data=new FormData(form);
+    const language=key=>(state.data.webGuide?.[key]||[]).map((item,index)=>({title:data.get(`${key}_title_${index}`),body:data.get(`${key}_body_${index}`),imageUrl:data.get(`${key}_image_${index}`),videoUrl:data.get(`${key}_video_${index}`)}));
+    try{await api('update-web-guide',{portalId:state.portalId,guide:{es:language('es'),en:language('en')}});closeModal();await bootstrap(state.portalId);state.view='web';render();showToast('Guia actualizada.');}catch(error){showToast(error.message);}
+  }
   async function action(event){
     const target=event.target.closest('[data-cp-action],[data-cp-view]');if(!target)return;
     const view=target.dataset.cpView;if(view){state.view=view;state.mobileMenu=false;render();return;}
@@ -160,6 +234,25 @@
     if(name==='toggle-mobile-menu'){state.mobileMenu=!state.mobileMenu;render();return;}
     if(name==='close-mobile-menu'){state.mobileMenu=false;render();return;}
     if(name==='return-to-maintenance')return returnToMaintenance();if(name==='logout')return logout();if(name==='close-modal')return closeModal();if(name==='open-request')return openRequest();if(name==='open-request-detail')return openRequestDetail(target.dataset.id);if(name==='open-attachment')return openAttachment(target.dataset.path);if(name==='open-client-invite')return inviteForm();if(name==='open-member-edit')return memberForm(target.dataset.id);if(name==='open-pause')return pauseForm();
+    if(name==='set-web-guide-language'){state.webGuideLanguage=target.dataset.language==='en'?'en':'es';localStorage.setItem('cuotly_web_guide_language',state.webGuideLanguage);if(document.querySelector('#clientModal .cp-guide-list'))return openWebGuide();render();return;}
+    if(name==='open-web-guide')return openWebGuide();
+    if(name==='open-web-guide-editor')return openWebGuideEditor();
+    if(name==='open-web-help')return openWebHelp();
+    if(name==='request-editor-access')return requestEditorAccess();
+    if(name==='open-public-web'){
+      const url=state.data.restaurant?.publicUrl;
+      if(url) window.open(url,'_blank','noopener');
+      else showToast('La web publica todavia no esta configurada.');
+      return;
+    }
+    if(name==='open-web-editor'){
+      if(!canOpenWebEditor()){showToast('No tienes permiso para abrir el editor.');return;}
+      if(!state.data.portal?.editorAvailable)return requestEditorAccess();
+      if(localStorage.getItem(editorReminderKey())==='hidden')return launchWebEditor();
+      return openEditorReminder();
+    }
+    if(name==='open-web-editor-confirm')return launchWebEditor();
+    if(name==='open-web-editor-hide-reminder'){localStorage.setItem(editorReminderKey(),'hidden');return launchWebEditor();}
     if(name==='open-extra-package'){
       try{await api('request-extra-package',{portalId:state.portalId,title:'Solicitud de paquete adicional',description:'El restaurante quiere solicitar un paquete adicional de cambios.'});showToast('Solicitud registrada. Se abrira WhatsApp para concretarla.');location.href='https://wa.me/34674248322?text='+encodeURIComponent(`Hola, soy ${state.data.restaurant.name} y quiero solicitar un paquete adicional de cambios.`);}catch(error){showToast(error.message);}return;
     }
@@ -172,6 +265,8 @@
   async function submit(event){
     const form=event.target;if(!(form instanceof HTMLFormElement))return;event.preventDefault();
     if(form.id==='clientRequestForm')return analyze(form);if(form.id==='clientRequestConfirmForm')return submitRequest(form);if(form.id==='clientMessageForm')return sendMessage(form);
+    if(form.id==='webHelpForm')return submitWebHelp(form);
+    if(form.id==='webGuideForm')return saveWebGuide(form);
     if(form.id==='clientRestaurantForm'){try{await api('update-restaurant-profile',{portalId:state.portalId,profile:Object.fromEntries(new FormData(form))});await bootstrap(state.portalId);showToast('Ficha actualizada.');}catch(error){showToast(error.message);}return;}
     if(form.id==='clientInviteForm'){try{const data=new FormData(form);await api('invite-client',{portalId:state.portalId,email:data.get('email'),role:data.get('role')});closeModal();showToast('Invitacion enviada.');}catch(error){showToast(error.message);}return;}
     if(form.id==='clientMemberForm'){try{const data=new FormData(form);await api('update-client-member',{portalId:state.portalId,memberId:form.dataset.id,role:data.get('role'),active:data.get('active')==='on'});closeModal();await bootstrap(state.portalId);showToast('Acceso actualizado.');}catch(error){showToast(error.message);}return;}

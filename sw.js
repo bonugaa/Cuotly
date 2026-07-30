@@ -1,4 +1,4 @@
-const CACHE_NAME = 'cuotly-v26-title-only-ai';
+const CACHE_NAME = 'cuotly-v27-my-web';
 const ASSETS = [
   './',
   './index.html',

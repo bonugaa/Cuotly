@@ -207,3 +207,211 @@
     transition: none;
   }
 }
+
+/* Mi web: acceso guiado al editor externo de LandingSite. */
+.cp-web-hero {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 24px;
+  border-color: #b8d7ca;
+  background: linear-gradient(135deg, #ffffff 0%, #eef9f4 100%);
+}
+
+.cp-web-hero h3 {
+  margin-top: 6px;
+  font-size: 20px;
+}
+
+.cp-web-hero p {
+  max-width: 690px;
+}
+
+.cp-web-reminder {
+  margin-top: 16px;
+}
+
+.cp-guide-toolbar {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 28px 0 14px;
+}
+
+.cp-guide-toolbar h3 {
+  margin: 0;
+  font: 800 18px 'Manrope', sans-serif;
+}
+
+.cp-guide-toolbar p {
+  margin: 5px 0 0;
+  color: var(--cp-muted);
+}
+
+.cp-language-toggle {
+  display: inline-flex;
+  gap: 3px;
+  padding: 3px;
+  border: 1px solid var(--cp-line);
+  border-radius: 7px;
+  background: #fff;
+}
+
+.cp-language-toggle button {
+  min-width: 38px;
+  min-height: 31px;
+  border: 0;
+  border-radius: 5px;
+  color: var(--cp-muted);
+  background: transparent;
+  font: 800 11px 'DM Sans', sans-serif;
+  cursor: pointer;
+}
+
+.cp-language-toggle button.active {
+  color: #fff;
+  background: var(--cp-green);
+}
+
+.cp-guide-list {
+  display: grid;
+  gap: 12px;
+}
+
+.cp-guide-step {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  gap: 14px;
+  padding: 18px;
+  border: 1px solid var(--cp-line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.cp-guide-entry {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.cp-guide-entry h3 {
+  margin: 4px 0 6px;
+  font: 800 19px 'Manrope', sans-serif;
+}
+
+.cp-guide-entry p {
+  margin: 0;
+  color: var(--cp-muted);
+}
+
+.cp-guide-number {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 7px;
+  color: #155d50;
+  background: var(--cp-mint);
+  font: 800 15px 'Manrope', sans-serif;
+}
+
+.cp-guide-copy h3 {
+  margin: 1px 0 6px;
+  font: 800 16px 'Manrope', sans-serif;
+}
+
+.cp-guide-copy p {
+  max-width: 860px;
+  margin: 0;
+  color: var(--cp-muted);
+  line-height: 1.55;
+}
+
+.cp-guide-copy .cp-secondary {
+  margin-top: 14px;
+}
+
+.cp-guide-image {
+  display: block;
+  width: min(100%, 620px);
+  max-height: 360px;
+  margin-top: 14px;
+  border: 1px solid var(--cp-line);
+  border-radius: 7px;
+  object-fit: cover;
+}
+
+.cp-guide-video {
+  display: inline-flex;
+  margin-top: 14px;
+  color: var(--cp-green);
+  font-weight: 800;
+}
+
+.cp-checklist {
+  display: grid;
+  gap: 11px;
+}
+
+.cp-checklist p {
+  margin: 0 0 4px;
+  color: var(--cp-muted);
+  line-height: 1.5;
+}
+
+.cp-checklist label {
+  display: flex;
+  align-items: start;
+  gap: 9px;
+  padding: 11px 12px;
+  border: 1px solid var(--cp-line);
+  border-radius: 7px;
+  font-weight: 700;
+}
+
+.cp-checklist input {
+  margin-top: 2px;
+  accent-color: var(--cp-green);
+}
+
+.cp-guide-editor-group {
+  display: grid;
+  gap: 8px;
+}
+
+.cp-guide-editor-group > h3 {
+  margin: 6px 0 1px;
+  font: 800 17px 'Manrope', sans-serif;
+}
+
+.cp-guide-editor-group details {
+  border: 1px solid var(--cp-line);
+  border-radius: 7px;
+  background: #fbfdfc;
+}
+
+.cp-guide-editor-group summary {
+  padding: 12px 14px;
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.cp-guide-editor-fields {
+  padding: 0 14px 14px;
+}
+
+@media (max-width: 700px) {
+  .cp-web-hero,
+  .cp-guide-toolbar,
+  .cp-guide-entry {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .cp-guide-step {
+    grid-template-columns: 34px minmax(0, 1fr);
+    padding: 15px;
+  }
+}
