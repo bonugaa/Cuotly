@@ -9,6 +9,22 @@ const PLAN_LIMITS = {
 };
 const CLIENT_ROLES = ['owner', 'editor', 'viewer'];
 const CHANGE_TYPES = new Set(['small', 'medium', 'large', 'photos', 'menu_update']);
+const DEFAULT_WEB_GUIDE = {
+  es: [
+    { title: 'Entra con la cuenta autorizada', body: 'Abre el editor solo desde este panel. Si no tienes acceso, solicita ayuda al propietario del restaurante o al equipo de mantenimiento.', imageUrl: '', videoUrl: '' },
+    { title: 'Habla con la IA de LandingSite', body: 'Escribe una instruccion clara en el chat: que quieres cambiar, donde esta y cual debe ser el resultado. La IA de LandingSite prepara el cambio dentro de su editor.', imageUrl: '', videoUrl: '' },
+    { title: 'Edita textos y contenido con calma', body: 'Puedes ajustar textos, platos, precios, horarios, fotos y secciones directamente en LandingSite. Estos cambios son de tu web y no consumen cambios de mantenimiento.', imageUrl: '', videoUrl: '' },
+    { title: 'Revisa antes de publicar', body: 'Comprueba la version movil, el idioma y que los datos importantes sean correctos. Cuando estes conforme, publica desde el boton de LandingSite.', imageUrl: '', videoUrl: '' },
+    { title: 'Pide ayuda cuando la necesites', body: 'Si prefieres que el equipo de mantenimiento se encargue, crea una solicitud desde este panel. Podras adjuntar una captura y seguir la conversacion.', imageUrl: '', videoUrl: '' },
+  ],
+  en: [
+    { title: 'Use an authorised account', body: 'Open the editor only from this panel. If you do not have access, ask the restaurant owner or the maintenance team for help.', imageUrl: '', videoUrl: '' },
+    { title: 'Talk to the LandingSite AI', body: 'Write a clear instruction in the chat: what you want to change, where it is and what the result should be. LandingSite AI prepares the change in its editor.', imageUrl: '', videoUrl: '' },
+    { title: 'Edit content carefully', body: 'You can update texts, dishes, prices, opening hours, photos and sections directly in LandingSite. These website edits do not use maintenance plan changes.', imageUrl: '', videoUrl: '' },
+    { title: 'Check before publishing', body: 'Review the mobile version, the language and important information. When everything is correct, publish from the LandingSite button.', imageUrl: '', videoUrl: '' },
+    { title: 'Ask for help when needed', body: 'If you prefer the maintenance team to handle it, create a request from this panel. You can attach a screenshot and continue the conversation here.', imageUrl: '', videoUrl: '' },
+  ],
+};
 
 function cleanUrl(value) { return String(value || '').trim().replace(/\/+$/, '').replace(/\/(?:rest|auth|storage|realtime)\/v1(?:\/.*)?$/i, ''); }
 function clone(value) { return JSON.parse(JSON.stringify(value || {})); }
@@ -18,6 +34,23 @@ function iso(value = new Date()) { return new Date(value).toISOString().slice(0,
 function appUrl(req) { return req.headers.origin || process.env.CUOTLY_APP_URL || (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : 'https://cuotly.vercel.app'); }
 function cleanEmail(value) { return String(value || '').trim().toLowerCase(); }
 function cleanText(value, maximum = 1000) { return String(value || '').trim().slice(0, maximum); }
+function cleanWebUrl(value) {
+  const url = cleanText(value, 1200);
+  return /^https?:\/\/[^\s]+$/i.test(url) ? url : '';
+}
+function normalizedGuide(raw) {
+  const guide = raw && typeof raw === 'object' ? raw : {};
+  const language = key => DEFAULT_WEB_GUIDE[key].map((item, index) => {
+    const custom = Array.isArray(guide[key]) ? guide[key][index] || {} : {};
+    return {
+      title: cleanText(custom.title || item.title, 160),
+      body: cleanText(custom.body || item.body, 1800),
+      imageUrl: cleanWebUrl(custom.imageUrl),
+      videoUrl: cleanWebUrl(custom.videoUrl),
+    };
+  });
+  return { es: language('es'), en: language('en') };
+}
 function serviceMemberIds(service) { const ids = Array.isArray(service?.assignedMemberIds) ? service.assignedMemberIds : (service?.assignedTo ? [service.assignedTo] : []); return [...new Set(ids.filter(Boolean))]; }
 function taskQuotaType(task) { return task.type === 'section' ? 'medium' : task.type === 'incidents' ? 'external_incident' : task.type; }
 function userName(user) { return user?.user_metadata?.full_name || user?.user_metadata?.name || user?.email?.split('@')[0] || 'Cliente'; }
@@ -99,6 +132,11 @@ function extractPublicUrl(restaurant) {
   const match = String(restaurant?.notes || '').match(/(?:^|\n)\s*Enlace\s*:\s*(https?:\/\/\S+)/i);
   return match?.[1] || '';
 }
+function extractEditorUrl(restaurant) {
+  if (cleanWebUrl(restaurant?.editorUrl)) return cleanWebUrl(restaurant.editorUrl);
+  const match = String(restaurant?.notes || '').match(/(?:^|\n)\s*Enlace\s+editor\s*:\s*(https?:\/\/\S+)/i);
+  return match?.[1] || '';
+}
 function cycleFor(service) {
   const start = String(service?.cycleStartDate || service?.startDate || iso()).slice(0, 10);
   const end = String(service?.cycleEndDate || '').slice(0, 10);
@@ -164,7 +202,7 @@ function currentUsage(state, service, acceptedRequests = []) {
 }
 function hasAllocationBalance(usage, allocations) { return allocations.every(item => usage[item.type] && usage[item.type].available >= item.quantity); }
 function safeRequest(row) {
-  return { id: row.id, serviceId: row.service_id || '', title: row.title, description: row.description, kind: row.kind, status: row.status, proposedAllocations: row.proposed_allocations || [], selectedAllocations: row.selected_allocations || [], analysis: row.analysis || {}, attachments: row.attachments || [], creditsConsumed: row.credits_consumed, rejectionReason: row.rejection_reason || '', requestedAt: row.requested_at, acceptedAt: row.accepted_at, startedAt: row.started_at, completedAt: row.completed_at, cancelledAt: row.cancelled_at };
+  return { id: row.id, serviceId: row.service_id || '', title: row.title, description: row.description, kind: row.kind, status: row.status, source: row.analysis?.source || '', proposedAllocations: row.proposed_allocations || [], selectedAllocations: row.selected_allocations || [], analysis: row.analysis || {}, attachments: row.attachments || [], creditsConsumed: row.credits_consumed, rejectionReason: row.rejection_reason || '', requestedAt: row.requested_at, acceptedAt: row.accepted_at, startedAt: row.started_at, completedAt: row.completed_at, cancelledAt: row.cancelled_at };
 }
 function safeService(state, service, requests) {
   const p = { presencia: 'Plan Presencia', impulso: 'Plan Impulso', premium: 'Plan Premium', menu: 'Menu Diario' };
@@ -181,14 +219,19 @@ async function portalPayload(portal, clientMember, caller, maintenanceMember = n
   const tasks = (state.tasks || []).filter(item => item.restaurantId === restaurant.id && item.clientRequestId).map(item => ({ id: item.id, requestId: item.clientRequestId, title: item.title, type: item.type, status: item.status, requestedAt: item.requestedAt, startedAt: item.startedAt, completedAt: item.completedAt }));
   const canManageClientTeam = clientMember?.role === 'owner' || maintenanceMember?.role === 'owner';
   const canReturnToMaintenance = Boolean(maintenanceMember);
+  const canOpenWebEditor = maintenanceMember?.role === 'owner' || ['owner', 'editor'].includes(clientMember?.role);
+  const canManageWebGuide = maintenanceMember?.role === 'owner';
+  const publicUrl = extractPublicUrl(restaurant) || portal.public_url || '';
+  const editorUrl = extractEditorUrl(restaurant);
   const portalMembers = canManageClientTeam ? await restRows(`cuotly_client_members?portal_id=eq.${encodeURIComponent(portal.id)}&active=is.true&select=id,name,email,role,created_at&order=created_at.asc`) : [];
   const notices = await restRows(`cuotly_client_notifications?user_id=eq.${encodeURIComponent(caller.id)}&portal_id=eq.${encodeURIComponent(portal.id)}&select=id,title,body,created_at,read_at&order=created_at.desc&limit=30`);
   return {
-    portal: { id: portal.id, workspaceId: portal.workspace_id, restaurantId: restaurant.id, status: portal.status, publicUrl: portal.public_url || extractPublicUrl(restaurant), allowAdminAccess: portal.allow_admin_access },
-    restaurant: { name: restaurant.name, email: restaurant.email || '', phone: restaurant.phone || '', address: restaurant.address || '', city: restaurant.city || '', openingHours: restaurant.openingHours || '', socialLinks: restaurant.socialLinks || '', logoUrl: restaurant.logoUrl || '', publicUrl: portal.public_url || extractPublicUrl(restaurant) },
+    portal: { id: portal.id, workspaceId: portal.workspace_id, restaurantId: restaurant.id, status: portal.status, publicUrl, editorAvailable: Boolean(editorUrl), allowAdminAccess: portal.allow_admin_access },
+    restaurant: { name: restaurant.name, email: restaurant.email || '', phone: restaurant.phone || '', address: restaurant.address || '', city: restaurant.city || '', openingHours: restaurant.openingHours || '', socialLinks: restaurant.socialLinks || '', logoUrl: restaurant.logoUrl || '', publicUrl },
     member: clientMember ? { role: clientMember.role, name: clientMember.name || userName(caller), email: clientMember.email } : null,
     services, requests: requests.map(safeRequest), tasks, payments, reports, clientMembers: portalMembers, notifications: notices,
-    permissions: { canManageClientTeam, canReturnToMaintenance },
+    webGuide: normalizedGuide(state.clientWebGuide),
+    permissions: { canManageClientTeam, canReturnToMaintenance, canOpenWebEditor, canManageWebGuide },
   };
 }
 async function listClientPortals(caller) {
@@ -277,6 +320,51 @@ export default async function handler(req, res) {
     if (!portal) return res.status(404).json({ error: 'No encontramos el panel.' });
     const client = await clientMembership(caller, portal.id);
     const clientCanEdit = client && ['owner', 'editor'].includes(client.role);
+
+    if (action === 'open-web-editor') {
+      if (req.method !== 'POST') return res.status(405).json({ error: 'Metodo no permitido.' });
+      let maintenance = await maintenanceMembership(caller, portal.workspace_id);
+      if (!client) maintenance = await ensureMaintenanceAccess(caller, portal, 'open-web-editor');
+      const allowed = clientCanEdit || maintenance?.role === 'owner';
+      if (!allowed) throw new Error('No tienes permiso para abrir el editor de esta web.');
+      const editorUrl = extractEditorUrl(restaurantInPortal(portal));
+      if (!editorUrl) throw new Error('El propietario de mantenimiento todavia no ha configurado el enlace del editor.');
+      await createActivity(portal.id, null, 'web_editor_opened', clientCanEdit ? 'restaurant' : 'maintenance', caller.id, { source: 'client_web' });
+      return res.status(200).json({ ok: true, url: editorUrl });
+    }
+
+    if (action === 'request-editor-access') {
+      if (req.method !== 'POST' || !clientCanEdit) throw new Error('Solo el propietario o los administradores del restaurante pueden solicitar acceso.');
+      const existing = await restRows(`cuotly_client_requests?portal_id=eq.${encodeURIComponent(portal.id)}&kind=eq.restaurant_link&status=eq.pending&select=id&limit=1`);
+      if (existing.length) throw new Error('Ya hay una solicitud de acceso al editor pendiente.');
+      const request = (await restRows('cuotly_client_requests', {
+        method: 'POST', headers: { 'content-type': 'application/json', prefer: 'return=representation' },
+        body: JSON.stringify({
+          portal_id: portal.id,
+          workspace_id: portal.workspace_id,
+          restaurant_id: portal.restaurant_id,
+          title: 'Solicitud de acceso al editor',
+          description: 'El restaurante solicita que se configure o comparta el acceso al editor de LandingSite.',
+          kind: 'restaurant_link',
+          analysis: { source: 'web_editor' },
+          requested_by: caller.id,
+        }),
+      }))[0];
+      await createActivity(portal.id, request.id, 'web_editor_access_requested', 'restaurant', caller.id, { source: 'client_web' });
+      await notifyPortal(portal.id, 'Quotly', 'Se ha solicitado acceso al editor de la web.', caller.id);
+      return res.status(201).json({ ok: true, request: safeRequest(request) });
+    }
+
+    if (action === 'update-web-guide') {
+      if (req.method !== 'POST') return res.status(405).json({ error: 'Metodo no permitido.' });
+      const maintenance = await ensureMaintenanceAccess(caller, portal, 'update-web-guide');
+      if (maintenance.role !== 'owner') throw new Error('Solo el propietario de mantenimiento puede editar la guia.');
+      const state = clone(portal.workspace.state || {});
+      state.clientWebGuide = normalizedGuide(body.guide);
+      await updateState(portal.workspace_id, state);
+      await createActivity(portal.id, null, 'web_guide_updated', 'maintenance', caller.id, { source: 'client_web' });
+      return res.status(200).json({ ok: true, guide: state.clientWebGuide });
+    }
 
     if (action === 'invite-client') {
       if (req.method !== 'POST') return res.status(405).json({ error: 'Metodo no permitido.' });
