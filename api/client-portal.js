@@ -1,5 +1,11 @@
+import { createSign } from 'node:crypto';
+
 const SUPABASE_URL = cleanUrl(process.env.SUPABASE_URL || '');
 const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+const GOOGLE_ANALYTICS_SERVICE_ACCOUNT_JSON = process.env.GOOGLE_ANALYTICS_SERVICE_ACCOUNT_JSON || '';
+const GOOGLE_ANALYTICS_SERVICE_ACCOUNT_EMAIL = process.env.GOOGLE_ANALYTICS_SERVICE_ACCOUNT_EMAIL || '';
+const GOOGLE_ANALYTICS_SERVICE_ACCOUNT_PRIVATE_KEY = process.env.GOOGLE_ANALYTICS_SERVICE_ACCOUNT_PRIVATE_KEY || '';
+const analyticsCache = new Map();
 
 const PLAN_LIMITS = {
   presencia: { small: 8, medium: 0, large: 0, photos: 5 },
@@ -37,6 +43,135 @@ function cleanText(value, maximum = 1000) { return String(value || '').trim().sl
 function cleanWebUrl(value) {
   const url = cleanText(value, 1200);
   return /^https?:\/\/[^\s]+$/i.test(url) ? url : '';
+}
+function cleanAnalyticsPropertyId(value) { return String(value || '').replace(/[^0-9]/g, '').slice(0, 32); }
+function cleanMeasurementId(value) { return String(value || '').trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 80); }
+function cleanContainerId(value) { return String(value || '').trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 80); }
+function analyticsConfig(restaurant) {
+  const raw = restaurant?.analytics && typeof restaurant.analytics === 'object' ? restaurant.analytics : {};
+  return {
+    propertyId: cleanAnalyticsPropertyId(raw.propertyId),
+    measurementId: cleanMeasurementId(raw.measurementId),
+    tagManagerId: cleanContainerId(raw.tagManagerId),
+    consentConfigured: raw.consentConfigured === true,
+    trackingInstalled: raw.trackingInstalled === true,
+    configuredAt: String(raw.configuredAt || ''),
+    lastVerifiedAt: String(raw.lastVerifiedAt || ''),
+  };
+}
+function base64url(value) { return Buffer.from(value).toString('base64').replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_'); }
+function serviceAccount() {
+  const raw = String(GOOGLE_ANALYTICS_SERVICE_ACCOUNT_JSON || '').trim();
+  if (raw) {
+    try { return JSON.parse(raw); } catch {
+      try { return JSON.parse(Buffer.from(raw, 'base64').toString('utf8')); } catch { return null; }
+    }
+  }
+  if (GOOGLE_ANALYTICS_SERVICE_ACCOUNT_EMAIL && GOOGLE_ANALYTICS_SERVICE_ACCOUNT_PRIVATE_KEY) {
+    return { client_email: GOOGLE_ANALYTICS_SERVICE_ACCOUNT_EMAIL, private_key: GOOGLE_ANALYTICS_SERVICE_ACCOUNT_PRIVATE_KEY.replace(/\\n/g, '\n'), token_uri: 'https://oauth2.googleapis.com/token' };
+  }
+  return null;
+}
+function analyticsRange(period = 'monthly', requestedMonth = '') {
+  const today = iso();
+  const pad = value => String(value).padStart(2, '0');
+  const completeMonth = String(requestedMonth || '').match(/^\d{4}-\d{2}$/)?.[0];
+  if (completeMonth) {
+    const [year, month] = completeMonth.split('-').map(Number);
+    const end = new Date(Date.UTC(year, month, 0)).getUTCDate();
+    return { period: 'monthly', startDate: `${completeMonth}-01`, endDate: `${completeMonth}-${pad(end)}`, label: completeMonth };
+  }
+  const now = new Date(`${today}T12:00:00Z`);
+  if (period === 'daily') {
+    const yesterday = new Date(now); yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+    const day = yesterday.toISOString().slice(0, 10);
+    return { period: 'daily', startDate: day, endDate: day, label: day };
+  }
+  if (period === 'quarterly') {
+    const quarterStart = Math.floor(now.getUTCMonth() / 3) * 3;
+    return { period: 'quarterly', startDate: `${now.getUTCFullYear()}-${pad(quarterStart + 1)}-01`, endDate: today, label: `T${Math.floor(now.getUTCMonth() / 3) + 1} ${now.getUTCFullYear()}` };
+  }
+  if (period === 'yearly') return { period: 'yearly', startDate: `${now.getUTCFullYear()}-01-01`, endDate: today, label: String(now.getUTCFullYear()) };
+  return { period: 'monthly', startDate: `${today.slice(0, 7)}-01`, endDate: today, label: today.slice(0, 7) };
+}
+function analyticsRows(result) {
+  const headers = result?.dimensionHeaders || [];
+  const metrics = result?.metricHeaders || [];
+  return (result?.rows || []).map(row => Object.fromEntries([
+    ...headers.map((header, index) => [header.name, row.dimensionValues?.[index]?.value || '']),
+    ...metrics.map((header, index) => [header.name, Number(row.metricValues?.[index]?.value || 0)]),
+  ]));
+}
+function analyticsEventLabel(name) {
+  return ({
+    click_phone: 'Telefono', click_email: 'Email', click_maps: 'Como llegar', click_menu: 'Carta o menu',
+    click_reservation: 'Reservas', click_order: 'Pedidos', click_thefork: 'TheFork', click_covermanager: 'CoverManager',
+    click_glovo: 'Glovo', click_ubereats: 'Uber Eats', click_justeat: 'Just Eat', click_social: 'Redes sociales',
+    form_submit: 'Formulario enviado', generate_lead: 'Formulario enviado',
+  })[name] || name;
+}
+async function googleAnalyticsToken() {
+  const account = serviceAccount();
+  if (!account?.client_email || !account?.private_key) throw new Error('Falta configurar la cuenta de servicio de Google Analytics en Vercel.');
+  const now = Math.floor(Date.now() / 1000);
+  const unsigned = `${base64url(JSON.stringify({ alg: 'RS256', typ: 'JWT' }))}.${base64url(JSON.stringify({ iss: account.client_email, scope: 'https://www.googleapis.com/auth/analytics.readonly', aud: account.token_uri || 'https://oauth2.googleapis.com/token', iat: now, exp: now + 3500 }))}`;
+  const signer = createSign('RSA-SHA256'); signer.update(unsigned); signer.end();
+  const assertion = `${unsigned}.${signer.sign(account.private_key, 'base64url')}`;
+  const response = await fetch(account.token_uri || 'https://oauth2.googleapis.com/token', { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer', assertion }) });
+  const output = await response.json().catch(() => ({}));
+  if (!response.ok || !output.access_token) throw new Error(output.error_description || 'No se pudo autorizar Google Analytics.');
+  return { token: output.access_token, email: account.client_email };
+}
+async function gaRunReport(propertyId, token, body) {
+  const response = await fetch(`https://analyticsdata.googleapis.com/v1beta/properties/${propertyId}:runReport`, { method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  const output = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(output.error?.message || 'No se pudo consultar Google Analytics.');
+  return output;
+}
+async function analyticsSnapshot(propertyId, range) {
+  const cacheKey = `${propertyId}:${range.startDate}:${range.endDate}`;
+  const cached = analyticsCache.get(cacheKey);
+  if (cached?.expiresAt > Date.now()) return cached.value;
+  const { token, email } = await googleAnalyticsToken();
+  const dates = [{ startDate: range.startDate, endDate: range.endDate }];
+  const common = { dateRanges: dates, metricAggregations: ['TOTAL'] };
+  const [overview, pages, sources, devices, locations, events] = await Promise.all([
+    gaRunReport(propertyId, token, { ...common, metrics: [{ name: 'activeUsers' }, { name: 'sessions' }, { name: 'screenPageViews' }, { name: 'engagedSessions' }] }),
+    gaRunReport(propertyId, token, { ...common, dimensions: [{ name: 'pagePath' }], metrics: [{ name: 'screenPageViews' }], orderBys: [{ metric: { metricName: 'screenPageViews' }, desc: true }], limit: 2 }),
+    gaRunReport(propertyId, token, { ...common, dimensions: [{ name: 'sessionDefaultChannelGroup' }], metrics: [{ name: 'sessions' }], orderBys: [{ metric: { metricName: 'sessions' }, desc: true }], limit: 5 }),
+    gaRunReport(propertyId, token, { ...common, dimensions: [{ name: 'deviceCategory' }], metrics: [{ name: 'activeUsers' }], orderBys: [{ metric: { metricName: 'activeUsers' }, desc: true }], limit: 4 }),
+    gaRunReport(propertyId, token, { ...common, dimensions: [{ name: 'city' }], metrics: [{ name: 'activeUsers' }], orderBys: [{ metric: { metricName: 'activeUsers' }, desc: true }], limit: 4 }),
+    gaRunReport(propertyId, token, { ...common, dimensions: [{ name: 'eventName' }], metrics: [{ name: 'eventCount' }], orderBys: [{ metric: { metricName: 'eventCount' }, desc: true }], limit: 100 }),
+  ]);
+  const totals = analyticsRows(overview)[0] || {};
+  const eventRows = analyticsRows(events);
+  const wantedEvents = new Set(['click_phone', 'click_email', 'click_maps', 'click_menu', 'click_reservation', 'click_order', 'click_thefork', 'click_covermanager', 'click_glovo', 'click_ubereats', 'click_justeat', 'click_social', 'form_submit', 'generate_lead']);
+  const value = {
+    configured: true,
+    range,
+    serviceAccountEmail: email,
+    totals: { users: Number(totals.activeUsers || 0), sessions: Number(totals.sessions || 0), pageViews: Number(totals.screenPageViews || 0), engagedSessions: Number(totals.engagedSessions || 0) },
+    topPages: analyticsRows(pages).map(row => ({ path: row.pagePath || '/', views: Number(row.screenPageViews || 0) })),
+    sources: analyticsRows(sources).map(row => ({ name: row.sessionDefaultChannelGroup || 'Sin clasificar', sessions: Number(row.sessions || 0) })),
+    devices: analyticsRows(devices).map(row => ({ name: row.deviceCategory || 'Sin clasificar', users: Number(row.activeUsers || 0) })),
+    locations: analyticsRows(locations).filter(row => row.city && row.city !== '(not set)').map(row => ({ name: row.city, users: Number(row.activeUsers || 0) })),
+    actions: eventRows.filter(row => wantedEvents.has(row.eventName)).map(row => ({ name: row.eventName, label: analyticsEventLabel(row.eventName), count: Number(row.eventCount || 0) })),
+    fetchedAt: new Date().toISOString(),
+  };
+  analyticsCache.set(cacheKey, { value, expiresAt: Date.now() + 10 * 60 * 1000 });
+  return value;
+}
+async function analyticsForPortal(portal, range) {
+  const restaurant = restaurantInPortal(portal);
+  const config = analyticsConfig(restaurant);
+  if (!config.propertyId) return { configured: false, state: 'property_missing', config, range, message: 'Aun no se ha configurado la propiedad GA4 de este restaurante.' };
+  if (!serviceAccount()) return { configured: false, state: 'service_account_missing', config, range, message: 'Falta conectar la cuenta de servicio de Google Analytics en Vercel.' };
+  try {
+    const snapshot = await analyticsSnapshot(config.propertyId, range);
+    return { ...snapshot, config: { measurementId: config.measurementId, tagManagerId: config.tagManagerId, consentConfigured: config.consentConfigured, trackingInstalled: config.trackingInstalled, lastVerifiedAt: config.lastVerifiedAt } };
+  } catch (error) {
+    return { configured: false, state: 'connection_error', config, range, message: error.message || 'No se pudo consultar Google Analytics.' };
+  }
 }
 function normalizedGuide(raw) {
   const guide = raw && typeof raw === 'object' ? raw : {};
@@ -223,15 +358,16 @@ async function portalPayload(portal, clientMember, caller, maintenanceMember = n
   const canManageWebGuide = maintenanceMember?.role === 'owner';
   const publicUrl = extractPublicUrl(restaurant) || portal.public_url || '';
   const editorUrl = extractEditorUrl(restaurant);
+  const analytics = analyticsConfig(restaurant);
   const portalMembers = canManageClientTeam ? await restRows(`cuotly_client_members?portal_id=eq.${encodeURIComponent(portal.id)}&active=is.true&select=id,name,email,role,created_at&order=created_at.asc`) : [];
   const notices = await restRows(`cuotly_client_notifications?user_id=eq.${encodeURIComponent(caller.id)}&portal_id=eq.${encodeURIComponent(portal.id)}&select=id,title,body,created_at,read_at&order=created_at.desc&limit=30`);
   return {
-    portal: { id: portal.id, workspaceId: portal.workspace_id, restaurantId: restaurant.id, status: portal.status, publicUrl, editorAvailable: Boolean(editorUrl), allowAdminAccess: portal.allow_admin_access },
+    portal: { id: portal.id, workspaceId: portal.workspace_id, restaurantId: restaurant.id, status: portal.status, publicUrl, editorAvailable: Boolean(editorUrl), allowAdminAccess: portal.allow_admin_access, analyticsConfigured: Boolean(analytics.propertyId), analyticsTrackingInstalled: analytics.trackingInstalled },
     restaurant: { name: restaurant.name, email: restaurant.email || '', phone: restaurant.phone || '', address: restaurant.address || '', city: restaurant.city || '', openingHours: restaurant.openingHours || '', socialLinks: restaurant.socialLinks || '', logoUrl: restaurant.logoUrl || '', publicUrl },
     member: clientMember ? { role: clientMember.role, name: clientMember.name || userName(caller), email: clientMember.email } : null,
     services, requests: requests.map(safeRequest), tasks, payments, reports, clientMembers: portalMembers, notifications: notices,
     webGuide: normalizedGuide(state.clientWebGuide),
-    permissions: { canManageClientTeam, canReturnToMaintenance, canOpenWebEditor, canManageWebGuide },
+    permissions: { canManageClientTeam, canReturnToMaintenance, canOpenWebEditor, canManageWebGuide, canViewAnalytics: Boolean(clientMember || ['owner', 'admin'].includes(maintenanceMember?.role)), canManageAnalytics: maintenanceMember?.role === 'owner' },
   };
 }
 async function listClientPortals(caller) {
@@ -320,6 +456,55 @@ export default async function handler(req, res) {
     if (!portal) return res.status(404).json({ error: 'No encontramos el panel.' });
     const client = await clientMembership(caller, portal.id);
     const clientCanEdit = client && ['owner', 'editor'].includes(client.role);
+
+    if (action === 'analytics-summary') {
+      const range = analyticsRange(String(body.period || req.query?.period || 'monthly'), String(body.month || req.query?.month || ''));
+      if (!client) {
+        const maintenance = await ensureMaintenanceAccess(caller, portal, 'analytics');
+        if (!['owner', 'admin'].includes(maintenance.role)) throw new Error('Los datos de rendimiento los consultan el propietario y los administradores.');
+      }
+      return res.status(200).json({ ok: true, analytics: await analyticsForPortal(portal, range) });
+    }
+
+    if (action === 'analytics-alert') {
+      const maintenance = await ensureMaintenanceAccess(caller, portal, 'analytics');
+      if (maintenance.role !== 'owner') throw new Error('Solo el propietario de mantenimiento puede consultar alertas de rendimiento.');
+      const current = await analyticsForPortal(portal, analyticsRange('monthly'));
+      const previousEnd = new Date(`${current.range?.startDate || iso()}T12:00:00Z`);
+      previousEnd.setUTCDate(previousEnd.getUTCDate() - 1);
+      const previousStart = new Date(previousEnd);
+      const elapsed = Math.max(1, Math.round((new Date(`${current.range?.endDate || iso()}T12:00:00Z`) - new Date(`${current.range?.startDate || iso()}T12:00:00Z`)) / 86400000) + 1);
+      previousStart.setUTCDate(previousStart.getUTCDate() - elapsed + 1);
+      const format = value => value.toISOString().slice(0, 10);
+      const previous = await analyticsForPortal(portal, { period: 'comparison', startDate: format(previousStart), endDate: format(previousEnd), label: 'Periodo anterior equivalente' });
+      const currentSessions = Number(current.totals?.sessions || 0);
+      const previousSessions = Number(previous.totals?.sessions || 0);
+      const change = previousSessions ? Math.round(((currentSessions - previousSessions) / previousSessions) * 100) : null;
+      return res.status(200).json({ ok: true, alert: { configured: current.configured, currentSessions, previousSessions, change, needsAttention: change !== null && change <= -50, range: current.range } });
+    }
+
+    if (action === 'update-analytics-config') {
+      if (req.method !== 'POST') return res.status(405).json({ error: 'Metodo no permitido.' });
+      const maintenance = await ensureMaintenanceAccess(caller, portal, 'analytics');
+      if (maintenance.role !== 'owner') throw new Error('Solo el propietario de mantenimiento puede configurar Google Analytics.');
+      const state = clone(portal.workspace.state || {});
+      const restaurant = (state.restaurants || []).find(item => item.id === portal.restaurant_id);
+      if (!restaurant) throw new Error('No encontramos el restaurante.');
+      const config = body.config || {};
+      restaurant.analytics = {
+        propertyId: cleanAnalyticsPropertyId(config.propertyId),
+        measurementId: cleanMeasurementId(config.measurementId),
+        tagManagerId: cleanContainerId(config.tagManagerId),
+        consentConfigured: config.consentConfigured === true,
+        trackingInstalled: config.trackingInstalled === true,
+        configuredAt: new Date().toISOString(),
+        lastVerifiedAt: config.lastVerifiedAt ? new Date().toISOString() : String(restaurant.analytics?.lastVerifiedAt || ''),
+      };
+      await updateState(portal.workspace_id, state);
+      analyticsCache.clear();
+      await createActivity(portal.id, null, 'analytics_config_updated', 'maintenance', caller.id, { propertyId: restaurant.analytics.propertyId, trackingInstalled: restaurant.analytics.trackingInstalled });
+      return res.status(200).json({ ok: true, config: analyticsConfig(restaurant), serviceAccountEmail: serviceAccount()?.client_email || '' });
+    }
 
     if (action === 'open-web-editor') {
       if (req.method !== 'POST') return res.status(405).json({ error: 'Metodo no permitido.' });
