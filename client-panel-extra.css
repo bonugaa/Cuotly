@@ -415,3 +415,183 @@
     padding: 15px;
   }
 }
+
+/* Rendimiento web: resumen privado de GA4 para el restaurante. */
+.cp-web-tabs {
+  display: inline-flex;
+  gap: 4px;
+  margin: 0 0 16px;
+  padding: 4px;
+  border: 1px solid var(--cp-line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.cp-web-tabs button {
+  min-height: 34px;
+  padding: 0 13px;
+  border: 0;
+  border-radius: 5px;
+  color: var(--cp-muted);
+  background: transparent;
+  font: 800 11px 'DM Sans', sans-serif;
+  cursor: pointer;
+}
+
+.cp-web-tabs button.active {
+  color: #fff;
+  background: var(--cp-green);
+}
+
+.cp-analytics-head,
+.cp-analytics-toolbar {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.cp-analytics-head {
+  margin-bottom: 16px;
+}
+
+.cp-analytics-head h3,
+.cp-analytics-empty h3 {
+  margin: 5px 0 6px;
+  font: 800 21px 'Manrope', sans-serif;
+}
+
+.cp-analytics-head p,
+.cp-analytics-empty p,
+.cp-analytics-note {
+  margin: 0;
+  color: var(--cp-muted);
+  line-height: 1.55;
+}
+
+.cp-analytics-toolbar {
+  margin: 0 0 16px;
+}
+
+.cp-web-tabs.compact {
+  margin: 0;
+}
+
+.cp-web-tabs.compact button {
+  min-width: 46px;
+  padding: 0 10px;
+}
+
+.cp-analytics-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.cp-analytics-metric,
+.cp-analytics-list {
+  border: 1px solid var(--cp-line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.cp-analytics-metric {
+  display: grid;
+  gap: 8px;
+  min-height: 100px;
+  padding: 15px;
+}
+
+.cp-analytics-metric span {
+  color: var(--cp-muted);
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.cp-analytics-metric strong {
+  color: var(--cp-ink);
+  font: 800 25px/1 'Manrope', sans-serif;
+}
+
+.cp-analytics-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.cp-analytics-list {
+  padding: 16px;
+}
+
+.cp-analytics-list h3 {
+  margin: 0 0 11px;
+  font: 800 14px 'Manrope', sans-serif;
+}
+
+.cp-analytics-list div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 0;
+  border-top: 1px solid var(--cp-line);
+  color: var(--cp-muted);
+  font-size: 12px;
+}
+
+.cp-analytics-list div span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cp-analytics-list div b {
+  color: var(--cp-ink);
+  font: 800 13px 'Manrope', sans-serif;
+}
+
+.cp-analytics-list p {
+  margin: 0;
+  color: var(--cp-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.cp-analytics-note {
+  margin-top: 13px;
+  font-size: 11px;
+}
+
+.cp-analytics-empty {
+  max-width: 680px;
+}
+
+@media (max-width: 700px) {
+  .cp-analytics-head,
+  .cp-analytics-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .cp-analytics-toolbar .cp-secondary {
+    width: 100%;
+  }
+
+  .cp-web-tabs {
+    display: flex;
+    width: 100%;
+  }
+
+  .cp-web-tabs button {
+    flex: 1;
+    min-width: 0;
+    padding: 0 8px;
+  }
+
+  .cp-analytics-metrics,
+  .cp-analytics-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

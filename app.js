@@ -127,6 +127,10 @@ const app = {
   settingsTab: 'general',
   accountTab: 'perfil',
   calendarMonth: startOfMonth(new Date()),
+  analytics: {
+    period: 'monthly',
+    byRestaurant: {},
+  },
   search: '',
   auth: {
     client: null,
@@ -1947,7 +1951,7 @@ function renderRestaurantDetail() {
     return;
   }
   const services = servicesForRestaurant(restaurant.id);
-  const tabs = ['servicios', 'trabajos', 'meses', 'archivos'];
+  const tabs = ['servicios', 'trabajos', 'rendimiento', 'meses', 'archivos'];
   $('#view-restaurante-detalle').innerHTML = `
     <button class="back-button" data-view-target="restaurantes">← Volver a restaurantes</button>
     <div class="detail-header">
@@ -1974,11 +1978,12 @@ function renderRestaurantDetail() {
 }
 
 function tabLabel(tab) {
-  return { servicios: 'Servicios', trabajos: 'Trabajos', meses: 'Ficha mensual', archivos: 'Informes y archivos' }[tab] || tab;
+  return { servicios: 'Servicios', trabajos: 'Trabajos', rendimiento: 'Rendimiento web', meses: 'Ficha mensual', archivos: 'Informes y archivos' }[tab] || tab;
 }
 
 function detailTabContent(restaurant, services) {
   if (app.detailTab === 'trabajos') return restaurantTasksTab(restaurant, services);
+  if (app.detailTab === 'rendimiento') return restaurantAnalyticsTab(restaurant);
   if (app.detailTab === 'meses') return restaurantMonthsTab(restaurant);
   if (app.detailTab === 'archivos') return restaurantFilesTab(restaurant);
   return `
@@ -2118,6 +2123,124 @@ function restaurantTasksTab(restaurant, services) {
       <div class="kanban restaurant-kanban">${columns.map(([status, label]) => taskColumn(status, label, tasks.filter(task => task.status === status))).join('')}</div>
     </section>
   `;
+}
+
+function restaurantAnalyticsConfig(restaurant) {
+  const raw = restaurant?.analytics && typeof restaurant.analytics === 'object' ? restaurant.analytics : {};
+  return {
+    propertyId: String(raw.propertyId || '').replace(/[^0-9]/g, '').slice(0, 32),
+    measurementId: String(raw.measurementId || '').trim().toUpperCase().slice(0, 80),
+    tagManagerId: String(raw.tagManagerId || '').trim().toUpperCase().slice(0, 80),
+    consentConfigured: raw.consentConfigured === true,
+    trackingInstalled: raw.trackingInstalled === true,
+    lastVerifiedAt: raw.lastVerifiedAt || '',
+  };
+}
+
+function analyticsMetric(label, value, detail = '') {
+  return `<article class="analytics-metric"><small>${esc(label)}</small><strong>${Number(value || 0).toLocaleString('es-ES')}</strong>${detail ? `<span>${esc(detail)}</span>` : ''}</article>`;
+}
+
+function analyticsList(title, rows, key, valueKey, suffix = '') {
+  return `<section class="analytics-list"><h4>${esc(title)}</h4>${rows?.length ? rows.map(row => `<div><span>${esc(row[key] || 'Sin datos')}</span><strong>${Number(row[valueKey] || 0).toLocaleString('es-ES')}${suffix}</strong></div>`).join('') : '<p>Sin datos en este periodo.</p>'}</section>`;
+}
+
+function analyticsActions(analytics) {
+  const actions = (analytics?.actions || []).filter(item => Number(item.count || 0) > 0);
+  return `<section class="analytics-list analytics-actions"><h4>Acciones en la web</h4>${actions.length ? actions.map(item => `<div><span>${esc(item.label || item.name)}</span><strong>${Number(item.count || 0).toLocaleString('es-ES')}</strong></div>`).join('') : '<p>Las acciones apareceran cuando el script de seguimiento este instalado y reciba actividad.</p>'}</section>`;
+}
+
+function restaurantAnalyticsTab(restaurant) {
+  if (!canManage()) return emptyState('GA', 'Acceso restringido', 'El rendimiento web lo consultan el propietario y los administradores.');
+  const config = restaurantAnalyticsConfig(restaurant);
+  const snapshot = app.analytics.byRestaurant[restaurant.id];
+  const periodLabels = { daily: 'Dia', monthly: 'Mes', quarterly: 'Trimestre', yearly: 'Ano' };
+  const controls = `<div class="analytics-toolbar"><div class="filter-group">${Object.entries(periodLabels).map(([period, label]) => `<button class="filter-button ${app.analytics.period === period ? 'active' : ''}" data-action="analytics-period" data-id="${restaurant.id}" data-period="${period}">${label}</button>`).join('')}</div><div class="analytics-toolbar-actions"><button class="secondary-button" data-action="analytics-refresh" data-id="${restaurant.id}">Actualizar</button>${isOwner() ? `<button class="secondary-button" data-action="open-analytics-config" data-id="${restaurant.id}">Configurar GA4</button>` : ''}</div></div>`;
+  if (!restaurant.clientPortalId) return `<section class="panel analytics-empty"><div class="panel-heading"><div><p class="eyebrow">GOOGLE ANALYTICS 4</p><h3>Rendimiento web</h3></div></div><div class="analytics-empty-copy"><p>Primero crea el panel privado de este restaurante. Asi Quotly puede mostrar sus datos sin compartir la propiedad de Analytics.</p>${isOwner() ? '<p>Despues podras conectar la propiedad GA4 y preparar la instalacion del script cuando la web este publicada.</p>' : ''}</div></section>`;
+  if (!config.propertyId) return `<section class="panel analytics-empty"><div class="panel-heading"><div><p class="eyebrow">GOOGLE ANALYTICS 4</p><h3>Rendimiento web</h3></div>${isOwner() ? '<button class="secondary-button" data-action="open-analytics-config" data-id="' + restaurant.id + '">Configurar GA4</button>' : ''}</div><div class="analytics-empty-copy"><p>Esta ficha aun no tiene una propiedad de Google Analytics conectada.</p><ol><li>Crea una propiedad GA4 privada para este restaurante.</li><li>Anota su ID de propiedad y su ID de medicion.</li><li>Cuando su web este publicada, instalaremos el script y comprobaremos los eventos.</li></ol></div></section>`;
+  if (snapshot?.loading) return `<section class="panel analytics-empty"><div class="panel-heading"><div><p class="eyebrow">GOOGLE ANALYTICS 4</p><h3>Rendimiento web</h3></div></div><div class="analytics-empty-copy"><p>Consultando los datos de Google Analytics...</p></div></section>`;
+  if (!snapshot?.analytics) return `<section class="panel analytics-empty"><div class="panel-heading"><div><p class="eyebrow">GOOGLE ANALYTICS 4</p><h3>Rendimiento web</h3></div></div>${controls}<div class="analytics-empty-copy"><p>Los datos se cargaran aqui al abrir esta ficha.</p></div></section>`;
+  const analytics = snapshot.analytics;
+  if (!analytics.configured) return `<section class="panel analytics-empty"><div class="panel-heading"><div><p class="eyebrow">GOOGLE ANALYTICS 4</p><h3>Rendimiento web</h3></div></div>${controls}<div class="analytics-empty-copy"><p>${esc(analytics.message || 'La conexion con Google Analytics todavia no esta lista.')}</p></div></section>`;
+  const alert = snapshot.alert;
+  const alertMarkup = isOwner() && alert?.needsAttention ? `<div class="analytics-alert"><strong>Atencion: el trafico ha bajado un ${Math.abs(alert.change)}%</strong><span>Se comparan sesiones del periodo actual y el periodo equivalente anterior.</span></div>` : '';
+  return `
+    <section class="analytics-page">
+      <div class="analytics-heading"><div><p class="eyebrow">GOOGLE ANALYTICS 4</p><h3>Rendimiento de ${esc(restaurant.name)}</h3><p>${esc(analytics.range?.startDate || '')} al ${esc(analytics.range?.endDate || '')} · actualizado ${formatDateTime(analytics.fetchedAt)}</p></div></div>
+      ${controls}
+      ${alertMarkup}
+      <div class="analytics-metrics">${analyticsMetric('Usuarios', analytics.totals?.users)}${analyticsMetric('Sesiones', analytics.totals?.sessions)}${analyticsMetric('Vistas de pagina', analytics.totals?.pageViews)}${analyticsMetric('Sesiones con interaccion', analytics.totals?.engagedSessions)}</div>
+      <div class="analytics-grid">
+        ${analyticsList('Dos rutas mas visitadas', analytics.topPages, 'path', 'views')}
+        ${analyticsList('Canales de llegada', analytics.sources, 'name', 'sessions')}
+        ${analyticsList('Dispositivos', analytics.devices, 'name', 'users')}
+        ${analyticsList('Ubicacion aproximada', analytics.locations, 'name', 'users')}
+        ${analyticsActions(analytics)}
+      </div>
+      <p class="analytics-footnote">Los clics indican intencion (por ejemplo, abrir reservas o pedidos). Una reserva o pedido confirmado solo aparecera cuando la plataforma permita conectarlo.</p>
+    </section>
+  `;
+}
+
+async function loadRestaurantAnalytics(restaurantId, force = false) {
+  const restaurant = restaurantById(restaurantId);
+  if (!restaurant?.clientPortalId || !canManage()) return;
+  const current = app.analytics.byRestaurant[restaurantId];
+  if (!force && current?.analytics && current.period === app.analytics.period) return;
+  app.analytics.byRestaurant[restaurantId] = { ...current, loading: true, period: app.analytics.period };
+  renderRestaurantDetail();
+  try {
+    const [summary, alert] = await Promise.all([
+      clientPortalApi('analytics-summary', { portalId: restaurant.clientPortalId, period: app.analytics.period }),
+      isOwner() ? clientPortalApi('analytics-alert', { portalId: restaurant.clientPortalId }) : Promise.resolve({ alert: null }),
+    ]);
+    app.analytics.byRestaurant[restaurantId] = { analytics: summary.analytics, alert: alert.alert || null, loading: false, period: app.analytics.period };
+  } catch (error) {
+    app.analytics.byRestaurant[restaurantId] = { analytics: { configured: false, message: error.message || 'No se pudo consultar Google Analytics.' }, loading: false, period: app.analytics.period };
+  }
+  if (app.view === 'restaurante-detalle' && app.selectedRestaurantId === restaurantId && app.detailTab === 'rendimiento') renderRestaurantDetail();
+}
+
+function openAnalyticsConfigModal(restaurantId) {
+  if (!isOwner()) return;
+  const restaurant = restaurantById(restaurantId);
+  if (!restaurant?.clientPortalId) { showToast('Crea antes el panel privado del restaurante.'); return; }
+  const config = restaurantAnalyticsConfig(restaurant);
+  openModal(modalFrame('Configurar Google Analytics 4', 'RENDIMIENTO WEB', `
+    <form id="analyticsConfigForm" data-restaurant="${restaurant.id}">
+      <p class="settings-copy">La propiedad de GA4 es privada del mantenimiento. Quotly solo mostrara resultados al restaurante, sin darle acceso a Analytics.</p>
+      <div class="form-grid">
+        <label class="wide">ID de propiedad GA4<input name="propertyId" inputmode="numeric" value="${esc(config.propertyId)}" placeholder="Ej. 123456789" required><small>Se encuentra en Administrar > Detalles de la propiedad.</small></label>
+        <label>ID de medicion (opcional)<input name="measurementId" value="${esc(config.measurementId)}" placeholder="G-XXXXXXXXXX"></label>
+        <label>Contenedor de GTM (opcional)<input name="tagManagerId" value="${esc(config.tagManagerId)}" placeholder="GTM-XXXXXXX"></label>
+        <label class="wide check-card"><input name="consentConfigured" type="checkbox" ${config.consentConfigured ? 'checked' : ''}><span><strong>El aviso de cookies esta configurado</strong><small>Marcala solo cuando la web tenga consentimiento antes de activar Analytics.</small></span></label>
+        <label class="wide check-card"><input name="trackingInstalled" type="checkbox" ${config.trackingInstalled ? 'checked' : ''}><span><strong>El script ya esta instalado y probado</strong><small>Lo activaremos al publicar la web y verificar sus enlaces, formularios y eventos.</small></span></label>
+      </div>
+      <div class="modal-actions"><button type="button" class="secondary-button" data-action="close-modal">Cancelar</button><button class="primary-button">Guardar configuracion</button></div>
+    </form>
+  `));
+}
+
+async function saveAnalyticsConfig(form) {
+  const restaurant = restaurantById(form.dataset.restaurant);
+  if (!restaurant?.clientPortalId || !isOwner()) return;
+  const data = new FormData(form);
+  const config = {
+    propertyId: data.get('propertyId'), measurementId: data.get('measurementId'), tagManagerId: data.get('tagManagerId'),
+    consentConfigured: data.has('consentConfigured'), trackingInstalled: data.has('trackingInstalled'),
+  };
+  try {
+    const result = await clientPortalApi('update-analytics-config', { portalId: restaurant.clientPortalId, config });
+    restaurant.analytics = { ...(restaurant.analytics || {}), ...(result.config || config) };
+    app.analytics.byRestaurant[restaurant.id] = {};
+    saveState();
+    closeModal();
+    renderRestaurantDetail();
+    showToast('Configuracion de GA4 guardada');
+    await loadRestaurantAnalytics(restaurant.id, true);
+  } catch (error) {
+    showToast(error.message || 'No se pudo guardar la configuracion.');
+  }
 }
 
 function restaurantMonthsTab(restaurant) {
@@ -3397,7 +3520,31 @@ function handlePlanChangeSubmit(form) {
   render();
 }
 
-function generateReport(restaurantId, month = monthKey(new Date())) {
+async function reportAnalytics(restaurant, month) {
+  if (!restaurant?.clientPortalId) return null;
+  try {
+    const response = await clientPortalApi('analytics-summary', { portalId: restaurant.clientPortalId, period: 'monthly', month });
+    return response.analytics?.configured ? response.analytics : null;
+  } catch {
+    return null;
+  }
+}
+
+function reportAnalyticsLines(analytics) {
+  if (!analytics?.configured) return [];
+  const list = (items, key, valueKey) => (items || []).map(item => `  ${item[key]}: ${Number(item[valueKey] || 0)}`);
+  return [
+    '',
+    `Rendimiento web (Google Analytics 4: ${analytics.range?.startDate || ''} a ${analytics.range?.endDate || ''}):`,
+    `  Usuarios: ${Number(analytics.totals?.users || 0)} · Sesiones: ${Number(analytics.totals?.sessions || 0)} · Vistas: ${Number(analytics.totals?.pageViews || 0)}`,
+    '  Dos rutas mas visitadas:',
+    ...list(analytics.topPages, 'path', 'views'),
+    '  Acciones registradas:',
+    ...(analytics.actions || []).filter(item => Number(item.count || 0) > 0).map(item => `  ${item.label || item.name}: ${Number(item.count || 0)}`),
+  ];
+}
+
+async function generateReport(restaurantId, month = monthKey(new Date())) {
   if (!canManage()) {
     showToast('Solo el propietario o un administrador puede generar informes.');
     return null;
@@ -3429,14 +3576,15 @@ function generateReport(restaurantId, month = monthKey(new Date())) {
     sections: reportPlan.report,
     quotas: reportServices.map(service => ({ name: plan(service.planCode).name, usage: quotaUsage(service, parseDate(`${month}-15`)) })),
     tasks: tasks.map(task => ({ title: task.title, type: taskTypeLabel(task.type), status: STATUS_LABELS[task.status], requestedAt: task.requestedAt, startedAt: task.startedAt, completedAt: task.completedAt, description: task.description })),
+    analytics: await reportAnalytics(restaurant, month),
   };
   saveState();
   showToast('Informe generado');
   return report;
 }
 
-function downloadReport(reportId) {
-  const report = app.state.reports.find(item => item.id === reportId) || generateReport(reportId);
+async function downloadReport(reportId) {
+  const report = app.state.reports.find(item => item.id === reportId) || await generateReport(reportId);
   if (!report) return;
   const restaurant = restaurantById(report.restaurantId);
   const reportServices = app.state.services.filter(service => service.restaurantId === report.restaurantId && BASE_PLAN_CODES.includes(service.planCode));
@@ -3465,6 +3613,7 @@ function downloadReport(reportId) {
       const usage = quotaUsage(service, parseDate(`${report.month}-15`));
       return [`${plan(service.planCode).name}:`, ...Object.entries(usage).map(([key, item]) => `  ${taskTypeLabel(key)}: ${Math.max(0, item.limit - item.used)} de ${item.limit}`)];
     }),
+    ...reportAnalyticsLines(report.data?.analytics),
   ];
   const blob = buildPdfBlob(`Informe ${restaurant?.name || ''} ${report.month}`, lines);
   downloadBlob(blob, `cuotly-${slug(restaurant?.name || 'restaurante')}-${report.month}.pdf`);
@@ -3868,7 +4017,17 @@ async function handleClick(event) {
   if (action === 'open-member-modal') openMemberModal(id);
   if (action === 'open-plan-change-modal') openPlanChangeModal(id);
   if (action === 'open-report-modal') openReportModal();
-  if (action === 'detail-tab') { app.detailTab = actionEl.dataset.tab; renderRestaurantDetail(); }
+  if (action === 'detail-tab') {
+    app.detailTab = actionEl.dataset.tab;
+    renderRestaurantDetail();
+    if (app.detailTab === 'rendimiento') await loadRestaurantAnalytics(app.selectedRestaurantId);
+  }
+  if (action === 'analytics-period') {
+    app.analytics.period = actionEl.dataset.period || 'monthly';
+    await loadRestaurantAnalytics(id, true);
+  }
+  if (action === 'analytics-refresh') await loadRestaurantAnalytics(id, true);
+  if (action === 'open-analytics-config') openAnalyticsConfigModal(id);
   if (action === 'task-filter') { app.taskFilter = actionEl.dataset.filter; renderTasks(); }
   if (action === 'payment-filter') { app.paymentFilter = actionEl.dataset.filter; renderPayments(); }
   if (action === 'report-filter') { app.reportFilter = actionEl.dataset.filter; renderReports(); }
@@ -3885,8 +4044,8 @@ async function handleClick(event) {
   if (action === 'delete-restaurant') deleteRestaurant(id);
   if (action === 'delete-task') deleteTask(id);
   if (action === 'cancel-service') cancelService(id);
-  if (action === 'download-report') downloadReport(id);
-  if (action === 'generate-report') { const report = generateReport(id, actionEl.dataset.month || monthKey(new Date())); if (report) downloadReport(report.id); render(); }
+  if (action === 'download-report') await downloadReport(id);
+  if (action === 'generate-report') { const report = await generateReport(id, actionEl.dataset.month || monthKey(new Date())); if (report) await downloadReport(report.id); render(); }
   if (action === 'export-payments') exportPayments();
   if (action === 'export-tasks') exportTasks();
   if (action === 'export-restaurants') exportRestaurants();
@@ -3897,7 +4056,7 @@ async function handleClick(event) {
   if (action === 'open-settings-prices') { app.settingsTab = 'general'; showView('ajustes'); }
 }
 
-function handleSubmit(event) {
+async function handleSubmit(event) {
   const form = event.target;
   if (!(form instanceof HTMLFormElement)) return;
   event.preventDefault();
@@ -3921,6 +4080,7 @@ function handleSubmit(event) {
   if (form.id === 'serviceTeamForm') handleServiceTeamSubmit(form);
   if (form.id === 'restaurantNoteForm') handleRestaurantNoteSubmit(form);
   if (form.id === 'clientPortalInviteForm') { handleClientPortalInvite(form); return; }
+  if (form.id === 'analyticsConfigForm') { saveAnalyticsConfig(form); return; }
   if (form.id === 'maintenanceClientMessageForm') { sendMaintenanceClientMessage(form); return; }
   if (form.id === 'extraCreditForm') handleExtraCreditSubmit(form);
   if (form.id === 'pauseServiceForm') handlePauseServiceSubmit(form);
@@ -3929,9 +4089,9 @@ function handleSubmit(event) {
   if (form.id === 'workspaceCreateForm') { createWorkspaceFromForm(form); return; }
   if (form.id === 'reportForm') {
     const data = Object.fromEntries(new FormData(form));
-    const report = generateReport(data.restaurantId, data.month);
+    const report = await generateReport(data.restaurantId, data.month);
     closeModal();
-    if (report) downloadReport(report.id);
+    if (report) await downloadReport(report.id);
     render();
   }
   if (form.id.startsWith('settings')) handleSettingsSubmit(form);

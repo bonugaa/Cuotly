@@ -1,6 +1,6 @@
 (() => {
   const query = () => new URLSearchParams(location.search);
-  const state = { client:null, user:null, getToken:null, portalId:'', data:null, portals:[], view:'inicio', preview:false, busy:false, mobileMenu:false, webGuideLanguage:localStorage.getItem('cuotly_web_guide_language') || 'es' };
+  const state = { client:null, user:null, getToken:null, portalId:'', data:null, portals:[], view:'inicio', preview:false, busy:false, mobileMenu:false, webGuideLanguage:localStorage.getItem('cuotly_web_guide_language') || 'es', webSection:'editor', analyticsPeriod:'monthly', analytics:null, analyticsLoading:false };
   const root = () => document.querySelector('#clientPanelRoot');
   const esc = value => String(value ?? '').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#039;');
   const formatDate = value => value ? new Intl.DateTimeFormat('es-ES',{day:'numeric',month:'short',year:'numeric'}).format(new Date(value)) : 'Sin fecha';
@@ -36,6 +36,24 @@
     const media = `${item.imageUrl ? `<img class="cp-guide-image" src="${esc(item.imageUrl)}" alt="Guia visual del paso ${index + 1}">` : ''}${item.videoUrl ? `<a class="cp-guide-video" href="${esc(item.videoUrl)}" target="_blank" rel="noopener">Ver video del paso</a>` : ''}`;
     return `<article class="cp-guide-step"><span class="cp-guide-number">${index + 1}</span><div class="cp-guide-copy"><h3>${esc(item.title)}</h3><p>${esc(item.body)}</p>${media}<button class="cp-secondary" data-cp-action="open-web-help">Necesito ayuda con este paso</button></div></article>`;
   }
+  function clientAnalyticsMetric(label, value){
+    return `<article class="cp-analytics-metric"><span>${esc(label)}</span><strong>${Number(value || 0).toLocaleString('es-ES')}</strong></article>`;
+  }
+  function clientAnalyticsList(title, rows, key, valueKey){
+    return `<section class="cp-analytics-list"><h3>${esc(title)}</h3>${rows?.length ? rows.map(row=>`<div><span>${esc(row[key] || 'Sin datos')}</span><b>${Number(row[valueKey] || 0).toLocaleString('es-ES')}</b></div>`).join('') : '<p>Aun no hay datos para este periodo.</p>'}</section>`;
+  }
+  function clientPerformancePage(){
+    const analytics=state.analytics;
+    const labels={daily:'Dia',monthly:'Mes',quarterly:'Trimestre',yearly:'Ano'};
+    const controls=`<div class="cp-analytics-toolbar"><div class="cp-web-tabs compact">${Object.entries(labels).map(([period,label])=>`<button class="${state.analyticsPeriod===period?'active':''}" data-cp-action="analytics-period" data-period="${period}">${label}</button>`).join('')}</div><button class="cp-secondary" data-cp-action="analytics-refresh">Actualizar</button></div>`;
+    if(state.analyticsLoading) return `<section class="cp-card cp-analytics-empty"><span class="cp-label">GOOGLE ANALYTICS 4</span><h3>Consultando el rendimiento de tu web...</h3><p>Estamos preparando el resumen de este periodo.</p></section>`;
+    if(!analytics?.configured) return `<section class="cp-card cp-analytics-empty"><span class="cp-label">GOOGLE ANALYTICS 4</span><h3>Rendimiento web</h3><p>${esc(analytics?.message || 'El equipo de mantenimiento activara el seguimiento cuando tu web este publicada y configurada.')}</p></section>`;
+    const actions=(analytics.actions||[]).filter(item=>Number(item.count||0)>0);
+    return `<section class="cp-analytics-head"><div><span class="cp-label">GOOGLE ANALYTICS 4</span><h3>Rendimiento web</h3><p>${esc(analytics.range?.startDate || '')} al ${esc(analytics.range?.endDate || '')}</p></div>${controls}</section>
+      <section class="cp-analytics-metrics">${clientAnalyticsMetric('Usuarios',analytics.totals?.users)}${clientAnalyticsMetric('Sesiones',analytics.totals?.sessions)}${clientAnalyticsMetric('Vistas',analytics.totals?.pageViews)}${clientAnalyticsMetric('Sesiones con interaccion',analytics.totals?.engagedSessions)}</section>
+      <section class="cp-analytics-grid">${clientAnalyticsList('Dos paginas mas visitadas',analytics.topPages,'path','views')}${clientAnalyticsList('Acciones en tu web',actions,'label','count')}</section>
+      <p class="cp-analytics-note">Las reservas y pedidos muestran clics de interes. Las conversiones confirmadas se incorporaran cuando la plataforma permita conectarlas.</p>`;
+  }
   function webPage(){
     const d = state.data;
     const canOpen = canOpenWebEditor();
@@ -46,13 +64,23 @@
     const publicAction = d.restaurant?.publicUrl ? '<button class="cp-secondary" data-cp-action="open-public-web">Ver mi web</button>' : '<button class="cp-secondary" disabled>Web publica pendiente</button>';
     const helpAction = canEdit() ? '<button class="cp-secondary" data-cp-action="open-web-help">Solicitar ayuda</button>' : '<button class="cp-secondary" disabled>Solicitar ayuda</button>';
     const guideEditor = canManageWebGuide() ? '<button class="cp-secondary" data-cp-action="open-web-guide-editor">Editar guia</button>' : '';
-    return `${pageHeading('Mi web','Edita tu web en LandingSite o pide ayuda al mantenimiento.')}
+    const editorPage=`
       <section class="cp-web-hero cp-card">
         <div><span class="cp-label">TU ESPACIO WEB</span><h3>Gestiona tu web con claridad</h3><p>Los cambios hechos en LandingSite se publican desde LandingSite y no consumen los cambios de tu plan de mantenimiento.</p></div>
         <div class="cp-actions">${accessAction}${publicAction}${helpAction}</div>
       </section>
       <section class="cp-banner cp-web-reminder"><strong>Antes de publicar:</strong> revisa la version movil, el idioma y que la informacion importante sea correcta.</section>
       <section class="cp-card cp-guide-entry"><div><span class="cp-label">GUIA GENERAL</span><h3>Aprende a editar tu web</h3><p>Consulta los pasos cuando los necesites, en espanol o en ingles.</p></div><div class="cp-actions"><button class="cp-secondary" data-cp-action="open-web-guide">Ver guia</button>${guideEditor}</div></section>`;
+    return `${pageHeading('Mi web','Edita tu web en LandingSite y consulta su rendimiento.')}
+      <div class="cp-web-tabs"><button class="${state.webSection==='editor'?'active':''}" data-cp-action="set-web-section" data-section="editor">Editar mi web</button><button class="${state.webSection==='performance'?'active':''}" data-cp-action="set-web-section" data-section="performance">Rendimiento</button></div>
+      ${state.webSection==='performance'?clientPerformancePage():editorPage}`;
+  }
+  async function loadPortalAnalytics(force=false){
+    if(state.analyticsLoading || (!force && state.analytics?.configured && state.analyticsPeriod===state.analytics.period)) return;
+    state.analyticsLoading=true;render();
+    try{const result=await api('analytics-summary',{portalId:state.portalId,period:state.analyticsPeriod});state.analytics={...(result.analytics||{}),period:state.analyticsPeriod};}
+    catch(error){state.analytics={configured:false,message:error.message||'No se pudo consultar Google Analytics.',period:state.analyticsPeriod};}
+    finally{state.analyticsLoading=false;if(state.view==='web'&&state.webSection==='performance')render();}
   }
   function render(){
     const rootEl=root(); if(!rootEl||!state.data) return;
@@ -71,7 +99,7 @@
   }
   function modal(title, body){ document.querySelector('#clientModal').innerHTML=`<div class="cp-modal-backdrop"><section class="cp-modal"><div class="cp-modal-head"><div><span class="cp-label">QUOTLY</span><h2>${esc(title)}</h2></div><button class="cp-modal-close" data-cp-action="close-modal">×</button></div><div class="cp-modal-body">${body}</div></section></div>`; }
   function closeModal(){ const el=document.querySelector('#clientModal'); if(el) el.innerHTML=''; }
-  async function bootstrap(portalId){ const result=await api('bootstrap',{portalId},'GET'); state.portals=result.portals||[]; if(!portalId){ renderPicker(); return; } state.portalId=portalId; state.data=result.data; state.preview=result.mode==='maintenance-preview'; state.view='inicio'; render(); }
+  async function bootstrap(portalId){ const result=await api('bootstrap',{portalId},'GET'); state.portals=result.portals||[]; if(!portalId){ renderPicker(); return; } state.portalId=portalId; state.data=result.data; state.preview=result.mode==='maintenance-preview'; state.view='inicio'; state.webSection='editor'; state.analytics=null; state.analyticsLoading=false; render(); }
   function renderPicker(){ const r=root(); document.querySelector('#authScreen')?.classList.add('hidden'); document.querySelector('#appShell')?.classList.add('hidden'); r.classList.remove('hidden'); r.innerHTML=`<div class="cp-space-picker"><span class="cp-label">QUOTLY</span><h1>Elige tu restaurante</h1><p>Tu cuenta puede acceder a varios paneles de restaurante.</p>${state.portals.map(portal=>`<button class="cp-space-option" data-cp-action="switch-portal" data-id="${portal.id}"><span><strong>${esc(portal.restaurantName)}</strong><small>${esc(roleName(portal.role))}</small></span><b>Entrar</b></button>`).join('')||'<div class="cp-empty">No tienes ningún panel de restaurante asignado.</div>'}<div class="cp-actions" style="margin-top:20px"><button class="cp-secondary" data-cp-action="logout">Cerrar sesión</button></div></div>`; }
   async function openRequest(){ const services=(state.data.services||[]).filter(item=>item.status==='active'&&item.planCode!=='menu'); const menus=(state.data.services||[]).filter(item=>item.status==='active'&&item.planCode==='menu'); if(!services.length&&!menus.length){showToast('No tienes servicios activos para solicitar un cambio.');return;} modal('Solicitar un cambio',`<form class="cp-form" id="clientRequestForm"><label>Servicio<select name="serviceId">${[...services,...menus].map(item=>`<option value="${item.id}">${esc(item.name)}</option>`).join('')}</select></label><label>Nombre del cambio<input name="title" required maxlength="180" placeholder="Ej. Actualizar los platos de la carta"></label><label>Explica lo que necesitas<textarea name="description" required maxlength="8000" placeholder="Incluye los textos, precios, enlaces o fotos necesarios."></textarea></label><div class="cp-actions"><button type="button" class="cp-secondary" data-cp-action="close-modal">Cancelar</button><button class="cp-primary">Analizar cambio</button></div></form>`); }
   async function analyze(form){ const data=Object.fromEntries(new FormData(form)); const button=form.querySelector('button.cp-primary'); button.disabled=true; button.textContent='Analizando...'; try{ const result=await fetch('/api/classify-change',{method:'POST',headers:{'content-type':'application/json',authorization:`Bearer ${await token()}`},body:JSON.stringify({workspaceId:state.data.portal.workspaceId,restaurantId:state.data.portal.restaurantId,serviceId:data.serviceId,title:data.title,description:data.description})}); const output=await result.json().catch(()=>({})); if(!result.ok) throw new Error(output.error||'No se pudo analizar.'); const choices=output.analysis.choices||[]; modal('Elige cómo usar tus cambios',`<form class="cp-form" id="clientRequestConfirmForm" data-service="${esc(data.serviceId)}" data-title="${esc(data.title)}" data-description="${esc(data.description)}"><p>${esc(output.analysis.summary)}</p><p>${esc(output.analysis.explanation)}</p>${output.analysis.quoteRequired?'<div class="cp-banner">Esta solicitud puede requerir presupuesto. Puedes enviarla para que el equipo la revise.</div>':''}<div class="cp-list">${choices.map((choice,index)=>`<label class="cp-choice"><input type="radio" name="choice" value="${index}" ${index===0?'checked':''}><strong>${esc(choice.label)}</strong><small>${esc(choice.explanation)} · ${choice.allocations.map(a=>`${a.quantity} ${a.type}`).join(', ')||'Presupuesto aparte'}</small></label>`).join('')}</div><input type="hidden" name="analysis" value="${esc(JSON.stringify(output.analysis))}"><input type="hidden" name="choices" value="${esc(JSON.stringify(choices))}"><div class="cp-actions"><button type="button" class="cp-secondary" data-cp-action="close-modal">Cancelar</button><button class="cp-primary">Enviar solicitud</button></div></form>`); }catch(error){showToast(error.message);}finally{button.disabled=false;button.textContent='Analizar cambio';} }
@@ -238,6 +266,18 @@
     if(name==='open-web-guide')return openWebGuide();
     if(name==='open-web-guide-editor')return openWebGuideEditor();
     if(name==='open-web-help')return openWebHelp();
+    if(name==='set-web-section'){
+      state.webSection=target.dataset.section==='performance'?'performance':'editor';
+      render();
+      if(state.webSection==='performance') await loadPortalAnalytics();
+      return;
+    }
+    if(name==='analytics-period'){
+      state.analyticsPeriod=target.dataset.period||'monthly';
+      await loadPortalAnalytics(true);
+      return;
+    }
+    if(name==='analytics-refresh') return loadPortalAnalytics(true);
     if(name==='request-editor-access')return requestEditorAccess();
     if(name==='open-public-web'){
       const url=state.data.restaurant?.publicUrl;
