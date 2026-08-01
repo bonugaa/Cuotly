@@ -1,5 +1,10 @@
 (() => {
   const query = () => new URLSearchParams(location.search);
+  const pendingClientInviteKey = 'cuotly_pending_client_invite';
+  const pendingClientInvite = () => query().get('clientInvite') || localStorage.getItem(pendingClientInviteKey) || '';
+  const inviteFromLink = query().get('clientInvite');
+  if (inviteFromLink) localStorage.setItem(pendingClientInviteKey, inviteFromLink);
+  const clientPanelRequested = () => query().has('clientPortal') || query().has('clientOnly') || Boolean(pendingClientInvite());
   const state = { client:null, user:null, getToken:null, portalId:'', data:null, portals:[], view:'inicio', preview:false, busy:false, mobileMenu:false, webGuideLanguage:localStorage.getItem('cuotly_web_guide_language') || 'es', webSection:'editor', analyticsPeriod:'monthly', analytics:null, analyticsLoading:false };
   const root = () => document.querySelector('#clientPanelRoot');
   const esc = value => String(value ?? '').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#039;');
@@ -115,10 +120,12 @@
     if(workspaceId&&state.user?.id) localStorage.setItem(`cuotly_workspace_${state.user.id}`,workspaceId);
     const url=new URL(location.href);
     url.searchParams.delete('clientPortal');
+    url.searchParams.delete('clientOnly');
     url.searchParams.delete('clientInvite');
+    localStorage.removeItem(pendingClientInviteKey);
     location.href=url.pathname+(url.search||'')+url.hash;
   }
-  async function logout(){await state.client?.auth.signOut();location.href=location.pathname;}
+  async function logout(){localStorage.removeItem(pendingClientInviteKey);await state.client?.auth.signOut();location.href=location.pathname;}
   async function communicatePayment(){const service=state.data.services?.[0];const text=encodeURIComponent(`Hola, soy ${state.data.restaurant.name}. He realizado el pago de ${service?.name||'mi mantenimiento'} y quiero comunicarlo.`);location.href=`https://wa.me/34674248322?text=${text}`;}
   async function action(event){ const target=event.target.closest('[data-cp-action],[data-cp-view]');if(!target)return; const view=target.dataset.cpView;if(view){state.view=view;render();return;} const name=target.dataset.cpAction; if(name==='logout')return logout(); if(name==='close-modal')return closeModal();if(name==='open-request')return openRequest();if(name==='open-request-detail')return openRequestDetail(target.dataset.id);if(name==='open-client-invite')return inviteForm();if(name==='open-member-edit')return memberForm(target.dataset.id);if(name==='open-pause')return pauseForm();if(name==='open-extra-package'){location.href='https://wa.me/34674248322?text='+encodeURIComponent(`Hola, soy ${state.data.restaurant.name} y quiero solicitar un paquete adicional de cambios.`);return;}if(name==='communicate-payment')return communicatePayment();if(name==='open-profile'){state.view='perfil';render();return;}if(name==='switch-portal'){const url=new URL(location.href);url.searchParams.set('clientPortal',target.dataset.id);url.searchParams.delete('clientInvite');location.href=url.toString();return;}if(name==='cancel-request'){if(!confirm('¿Cancelar esta solicitud? Si el equipo ya la ha empezado, los cambios se consumirán.'))return;try{await api('cancel-request',{portalId:state.portalId,requestId:target.dataset.id});closeModal();await bootstrap(state.portalId);showToast('Solicitud cancelada.');}catch(error){showToast(error.message);}} }
   async function submit(event){const form=event.target;if(!(form instanceof HTMLFormElement))return;event.preventDefault();if(form.id==='clientRequestForm')return analyze(form);if(form.id==='clientRequestConfirmForm')return submitRequest(form);if(form.id==='clientMessageForm')return sendMessage(form);if(form.id==='clientRestaurantForm'){try{await api('update-restaurant-profile',{portalId:state.portalId,profile:Object.fromEntries(new FormData(form))});await bootstrap(state.portalId);showToast('Ficha actualizada.');}catch(error){showToast(error.message);}return;}if(form.id==='clientInviteForm'){try{await api('invite-client',{portalId:state.portalId,email:new FormData(form).get('email'),role:new FormData(form).get('role')});closeModal();showToast('Invitación enviada.');}catch(error){showToast(error.message);}return;}if(form.id==='clientMemberForm'){try{const f=new FormData(form);await api('update-client-member',{portalId:state.portalId,memberId:form.dataset.id,role:f.get('role'),active:f.get('active')==='on'});closeModal();await bootstrap(state.portalId);showToast('Acceso actualizado.');}catch(error){showToast(error.message);}return;}if(form.id==='clientPauseForm'){const f=new FormData(form);try{await api(f.get('type')==='pause'?'request-service-pause':'request-cancellation',{portalId:state.portalId,title:f.get('type')==='pause'?'Solicitud de pausa':'Solicitud de baja',description:f.get('description')});closeModal();await bootstrap(state.portalId);showToast('Solicitud enviada.');}catch(error){showToast(error.message);}return;}if(form.id==='clientProfileForm')return profileSave(form);}
@@ -321,4 +328,18 @@
   }
   document.removeEventListener('keydown',handleClientKeydown);
   document.addEventListener('keydown',handleClientKeydown);
+  const originalClientPanelStart = window.CuotlyClientPortal.start;
+  window.CuotlyClientPortal.requested = clientPanelRequested;
+  window.CuotlyClientPortal.start = async context => {
+    const invite = pendingClientInvite();
+    if (invite && !query().has('clientInvite')) {
+      const url = new URL(location.href);
+      url.searchParams.set('clientInvite', invite);
+      url.searchParams.set('clientOnly', '1');
+      history.replaceState({}, '', url);
+    }
+    const result = await originalClientPanelStart(context);
+    if (query().has('clientPortal')) localStorage.removeItem(pendingClientInviteKey);
+    return result;
+  };
 })();

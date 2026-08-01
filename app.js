@@ -4144,6 +4144,25 @@ async function ensurePersonalWorkspace() {
   if (!localStorage.getItem(workspaceSelectionKey())) localStorage.setItem(workspaceSelectionKey(), createdResult.workspace.id);
 }
 
+async function redirectClientOnlyAccount() {
+  const token = await getAccessToken();
+  if (!token) return false;
+  try {
+    const response = await fetch('/api/client-portal?action=client-context', { headers: { authorization: `Bearer ${token}` } });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok || !result.clientOnly) return false;
+    const url = new URL(window.location.href);
+    url.searchParams.delete('invite');
+    url.searchParams.delete('clientInvite');
+    url.searchParams.delete('clientPortal');
+    url.searchParams.set('clientOnly', '1');
+    window.location.replace(url.toString());
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function checkInvitationFromLink() {
   const inviteId = new URLSearchParams(window.location.search).get('invite');
   if (!inviteId || !app.auth.user) return;
@@ -4187,6 +4206,7 @@ async function startApp() {
   if (needsAccountCompletion()) { renderAccountCompletion(); return; }
   const mfaReady = await mfaGate();
   if (!mfaReady) return;
+  if (await redirectClientOnlyAccount()) return;
   try {
     await ensurePersonalWorkspace();
   } catch (error) {
