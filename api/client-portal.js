@@ -1,5 +1,7 @@
 import { createSign } from 'node:crypto';
 
+import { sendPushToUsers } from './push-utils.js';
+
 const SUPABASE_URL = cleanUrl(process.env.SUPABASE_URL || '');
 const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 const GOOGLE_ANALYTICS_SERVICE_ACCOUNT_JSON = process.env.GOOGLE_ANALYTICS_SERVICE_ACCOUNT_JSON || '';
@@ -255,10 +257,23 @@ async function clientMembership(caller, portalId) {
 async function createActivity(portalId, requestId, eventType, side, actorId, detail = {}) {
   await restRows('cuotly_client_activity', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ portal_id: portalId, request_id: requestId || null, event_type: eventType, side, actor_id: actorId || null, detail }) });
 }
-async function notifyPortal(portalId, title, body, exceptUserId = '') {
+async function notifyPortal(portalId, title, body, exceptUserId = '', category = 'messages', url = '/') {
   const members = await restRows(`cuotly_client_members?portal_id=eq.${encodeURIComponent(portalId)}&active=is.true&user_id=not.is.null&select=user_id`);
   const notifications = members.filter(item => item.user_id && item.user_id !== exceptUserId).map(item => ({ portal_id: portalId, user_id: item.user_id, title, body }));
   if (notifications.length) await restRows('cuotly_client_notifications', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(notifications) });
+  await sendPushToUsers(notifications.map(item => item.user_id), { title, body, url, category, tag: `portal-${portalId}` });
+}
+async function notifyMaintenance(portal, title, body, service = null, exceptUserId = '', category = 'messages') {
+  const members = await restRows(`cuotly_members?workspace_id=eq.${encodeURIComponent(portal.workspace_id)}&active=is.true&user_id=not.is.null&select=user_id,email,role`);
+  const stateMembers = portal.workspace?.state?.members || [];
+  const assignedIds = new Set(serviceMemberIds(service));
+  const targetIds = members.filter(item => {
+    if (!item.user_id || item.user_id === exceptUserId) return false;
+    if (['owner', 'admin'].includes(item.role)) return true;
+    const internal = stateMembers.find(member => cleanEmail(member.email) === cleanEmail(item.email));
+    return Boolean(internal?.id && assignedIds.has(internal.id));
+  }).map(item => item.user_id);
+  await sendPushToUsers(targetIds, { title, body, url: '/', category, tag: `maintenance-${portal.id}` });
 }
 function restaurantInPortal(portal) { return (portal.workspace?.state?.restaurants || []).find(item => item.id === portal.restaurant_id) || null; }
 function servicesInPortal(portal) { return (portal.workspace?.state?.services || []).filter(item => item.restaurantId === portal.restaurant_id && item.status !== 'cancelled'); }
@@ -536,7 +551,7 @@ export default async function handler(req, res) {
         }),
       }))[0];
       await createActivity(portal.id, request.id, 'web_editor_access_requested', 'restaurant', caller.id, { source: 'client_web' });
-      await notifyPortal(portal.id, 'Quotly', 'Se ha solicitado acceso al editor de la web.', caller.id);
+      await notifyMaintenance(portal, 'Solicitud de acceso al editor', 'El restaurante ha solicitado acceso al editor de la web.', null, caller.id, 'messages');
       return res.status(201).json({ ok: true, request: safeRequest(request) });
     }
 
@@ -594,7 +609,8 @@ export default async function handler(req, res) {
       if (body.kind !== 'incident' && allocations.length && !hasAllocationBalance(usage, allocations)) throw new Error('Ya no quedan cambios suficientes para esta solicitud. Puedes pedir un paquete adicional.');
       const request = (await restRows('cuotly_client_requests', { method: 'POST', headers: { 'content-type': 'application/json', prefer: 'return=representation' }, body: JSON.stringify({ portal_id: portal.id, workspace_id: portal.workspace_id, restaurant_id: portal.restaurant_id, service_id: service.id, title: cleanText(body.title, 180), description: cleanText(body.description, 8000), kind: body.kind === 'incident' ? 'incident' : 'change', selected_allocations: allocations, proposed_allocations: Array.isArray(body.proposedAllocations) ? body.proposedAllocations : [], analysis: body.analysis || {}, attachments: safeAttachments(body.attachments, portal.id), requested_by: caller.id }) }))[0];
       await createActivity(portal.id, request.id, 'request_created', 'restaurant', caller.id, { allocations });
-      await notifyPortal(portal.id, 'Quotly', 'Tu solicitud se ha enviado al equipo de mantenimiento.', caller.id);
+      const restaurantName = restaurantInPortal(portal)?.name || 'Un restaurante';
+      await notifyMaintenance(portal, `Nueva solicitud · ${restaurantName}`, request.title || 'Hay una nueva solicitud pendiente.', service, caller.id, 'messages');
       return res.status(201).json({ ok: true, request: safeRequest(request) });
     }
     if (action === 'cancel-request') {
@@ -619,13 +635,18 @@ export default async function handler(req, res) {
       const requestId = String(body.requestId || '');
       const isClient = Boolean(client);
       if (!isClient) await ensureMaintenanceAccess(caller, portal, 'message');
-      const request = (await restRows(`cuotly_client_requests?id=eq.${encodeURIComponent(requestId)}&portal_id=eq.${encodeURIComponent(portal.id)}&select=id`))[0];
+      const request = (await restRows(`cuotly_client_requests?id=eq.${encodeURIComponent(requestId)}&portal_id=eq.${encodeURIComponent(portal.id)}&select=id,service_id`))[0];
       if (!request) throw new Error('No encontramos la solicitud.');
       const message = cleanText(body.message, 8000);
       if (!message) throw new Error('Escribe un mensaje.');
       const row = (await restRows('cuotly_client_messages', { method: 'POST', headers: { 'content-type': 'application/json', prefer: 'return=representation' }, body: JSON.stringify({ request_id: requestId, side: isClient ? 'restaurant' : 'maintenance', body: message, attachments: safeAttachments(body.attachments, portal.id), author_id: caller.id }) }))[0];
       await createActivity(portal.id, requestId, 'message_sent', isClient ? 'restaurant' : 'maintenance', caller.id);
-      await notifyPortal(portal.id, 'Quotly', isClient ? 'El restaurante ha enviado un mensaje.' : 'El equipo de mantenimiento ha respondido.', caller.id);
+      if (isClient) {
+        const service = servicesInPortal(portal).find(item => item.id === request.service_id) || null;
+        await notifyMaintenance(portal, 'Nuevo mensaje del restaurante', message, service, caller.id, 'messages');
+      } else {
+        await notifyPortal(portal.id, 'Quotly', 'El equipo de mantenimiento ha respondido.', caller.id, 'messages', `/?clientPortal=${encodeURIComponent(portal.id)}`);
+      }
       return res.status(201).json({ ok: true, message: { id: row.id, side: row.side, body: row.body, attachments: row.attachments, createdAt: row.created_at } });
     }
     if (action === 'request-service-pause' || action === 'request-cancellation' || action === 'request-extra-package' || action === 'request-restaurant-link') {
@@ -637,6 +658,7 @@ export default async function handler(req, res) {
       const record = (await restRows('cuotly_client_requests', { method: 'POST', headers: { 'content-type': 'application/json', prefer: 'return=representation' }, body: JSON.stringify({ portal_id: portal.id, workspace_id: portal.workspace_id, restaurant_id: portal.restaurant_id, service_id: service?.id || null, title: cleanText(body.title || kind, 180), description: cleanText(body.description, 3000), kind, analysis: kind === 'pause' ? { plannedDays: Math.min(31, Math.max(1, Number(body.plannedDays || 31))) } : {}, requested_by: caller.id }) }))[0];
       if (kind === 'restaurant_link') await restRows('cuotly_client_link_requests', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ requester_id: caller.id, source_portal_id: portal.id, status: 'pending' }) });
       await createActivity(portal.id, record.id, `${kind}_requested`, 'restaurant', caller.id);
+      await notifyMaintenance(portal, 'Nueva solicitud del restaurante', record.title || 'Hay una nueva solicitud pendiente.', service, caller.id, 'messages');
       return res.status(201).json({ ok: true, request: safeRequest(record) });
     }
     if (action === 'maintenance-request-update') {
@@ -689,7 +711,7 @@ export default async function handler(req, res) {
       if (nextStatus === 'rejected') patch.rejection_reason = cleanText(body.reason, 1000) || 'La solicitud no se puede realizar con el servicio actual.';
       await restRows(`cuotly_client_requests?id=eq.${encodeURIComponent(request.id)}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify(patch) });
       await createActivity(portal.id, request.id, `request_${nextStatus}`, 'maintenance', caller.id, { role: manager.role });
-      await notifyPortal(portal.id, 'Quotly', `Tu solicitud ahora esta: ${nextStatus}.`, caller.id);
+      await notifyPortal(portal.id, 'Quotly', `Tu solicitud ahora está: ${nextStatus}.`, caller.id, 'messages', `/?clientPortal=${encodeURIComponent(portal.id)}`);
       return res.status(200).json({ ok: true });
     }
     if (action === 'messages') {

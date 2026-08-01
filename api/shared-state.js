@@ -1,3 +1,5 @@
+import { sendPushToUsers } from './push-utils.js';
+
 const SUPABASE_URL = cleanUrl(process.env.SUPABASE_URL || '');
 const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 
@@ -11,6 +13,10 @@ function headers(extra = {}) {
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value || {}));
+}
+
+function cleanEmail(value) {
+  return String(value || '').trim().toLowerCase();
 }
 
 function isoDate(value = new Date()) {
@@ -363,6 +369,29 @@ async function syncMembers(workspaceId, state, caller) {
   }
 }
 
+async function notifyTaskAssignments(workspaceId, beforeState, nextState, actorId) {
+  const previous = new Map((beforeState?.tasks || []).map(task => [task.id, task]));
+  const changed = (nextState?.tasks || []).filter(task => {
+    if (!task?.assignedTo) return false;
+    const old = previous.get(task.id);
+    return !old || old.assignedTo !== task.assignedTo;
+  });
+  if (!changed.length) return;
+  const membershipResponse = await rest(`cuotly_members?workspace_id=eq.${encodeURIComponent(workspaceId)}&active=is.true&user_id=not.is.null&select=user_id,email`);
+  if (!membershipResponse.ok) return;
+  const memberships = await membershipResponse.json().catch(() => []);
+  const stateMembers = nextState?.members || [];
+  const targets = new Map();
+  for (const task of changed) {
+    const internal = stateMembers.find(member => member.id === task.assignedTo);
+    const account = memberships.find(member => cleanEmail(member.email) === cleanEmail(internal?.email));
+    if (account?.user_id && account.user_id !== actorId) targets.set(account.user_id, task);
+  }
+  for (const [userId, task] of targets) {
+    await sendPushToUsers([userId], { title: 'Nuevo trabajo asignado', body: task.title || 'Tienes un trabajo nuevo en Quotly.', url: '/?view=trabajos', category: 'assignments', tag: `task-${task.id}` });
+  }
+}
+
 async function purgeMember(workspace, membership, body) {
   if (!isOwner(membership)) throw new Error('FORBIDDEN');
   const state = clone(workspace.state || {});
@@ -491,5 +520,6 @@ export default async function handler(req, res) {
     next = mergeWorkerState(current, incoming, caller, membership);
   }
   await upsertWorkspaceState(selected.workspace_id, next);
+  await notifyTaskAssignments(selected.workspace_id, current, next, caller.id);
   return reply(res, 200, { ok: true, workspace: workspaceInfo });
 }

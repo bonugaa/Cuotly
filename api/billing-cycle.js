@@ -1,3 +1,5 @@
+import { sendPushToUsers } from './push-utils.js';
+
 const SUPABASE_URL = cleanUrl(process.env.SUPABASE_URL || '');
 const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 const CRON_SECRET = process.env.CRON_SECRET || '';
@@ -279,6 +281,32 @@ function processWorkspace(input) {
   return { state, changed };
 }
 
+function paymentChanges(beforeState, nextState) {
+  const previous = new Map((beforeState?.payments || []).map(payment => [payment.id, payment]));
+  return (nextState?.payments || []).filter(payment => {
+    const old = previous.get(payment.id);
+    return !old || old.status !== payment.status;
+  });
+}
+
+async function notifyPaymentChanges(workspaceId, state, changedPayments) {
+  if (!changedPayments.length) return;
+  const response = await rest(`cuotly_members?workspace_id=eq.${encodeURIComponent(workspaceId)}&active=is.true&user_id=not.is.null&role=in.(owner,admin)&select=user_id`);
+  if (!response.ok) return;
+  const members = await response.json().catch(() => []);
+  const names = new Map((state.restaurants || []).map(item => [item.id, item.name || 'Restaurante']));
+  const first = changedPayments[0];
+  const restaurant = names.get(first.restaurantId) || 'un restaurante';
+  const status = first.status === 'paid' ? 'confirmado' : first.status === 'late' ? 'retrasado' : first.status === 'cancelled' ? 'cancelado' : 'pendiente';
+  await sendPushToUsers(members.map(item => item.user_id), {
+    title: 'Actualización de pagos',
+    body: `Pago de ${restaurant}: ${status}.`,
+    url: '/?view=pagos',
+    category: 'payments',
+    tag: `payment-${first.id}`,
+  });
+}
+
 export default async function handler(req, res) {
   if (!SUPABASE_URL || !SERVICE_ROLE_KEY || !CRON_SECRET) return res.status(500).json({ error: 'Falta configurar Supabase o CRON_SECRET.' });
   if (req.headers.authorization !== `Bearer ${CRON_SECRET}`) return res.status(401).json({ error: 'No autorizado.' });
@@ -297,6 +325,7 @@ export default async function handler(req, res) {
         body: JSON.stringify({ state: result.state, updated_at: new Date().toISOString() }),
       });
       if (!save.ok) throw new Error(await save.text());
+      await notifyPaymentChanges(workspace.id, result.state, paymentChanges(workspace.state || {}, result.state));
       updated += 1;
     }
     return res.status(200).json({ ok: true, updated, checked: workspaces.length });
