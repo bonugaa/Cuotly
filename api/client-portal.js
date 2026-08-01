@@ -407,7 +407,7 @@ async function inviteClient(caller, portal, body, req) {
   if (!email.includes('@')) throw new Error('Escribe un email valido.');
   const existing = await findAuthUser(email);
   const invite = (await restRows('cuotly_client_invitations?on_conflict=portal_id,email', { method: 'POST', headers: { 'content-type': 'application/json', prefer: 'resolution=merge-duplicates,return=representation' }, body: JSON.stringify({ portal_id: portal.id, email, role, invited_by: caller.id, status: 'pending', accepted_by: null, accepted_at: null, responded_at: null }) }))[0];
-  const link = `${appUrl(req)}/?clientInvite=${encodeURIComponent(invite.id)}`;
+  const link = `${appUrl(req)}/?clientInvite=${encodeURIComponent(invite.id)}&clientOnly=1`;
   const endpoint = existing ? `${SUPABASE_URL}/auth/v1/otp` : `${SUPABASE_URL}/auth/v1/invite`;
   const payload = existing ? { email, create_user: false, redirect_to: link } : { email, data: { cuotly_client_invite_id: invite.id }, redirect_to: link };
   const sent = await fetch(endpoint, { method: 'POST', headers: headers({ 'content-type': 'application/json' }), body: JSON.stringify(payload) });
@@ -440,6 +440,11 @@ export default async function handler(req, res) {
       if (req.method !== 'POST') return res.status(405).json({ error: 'Metodo no permitido.' });
       const portalId = await acceptInvite(caller, String(body.inviteId || ''));
       return res.status(200).json({ ok: true, portalId, portals: await listClientPortals(caller) });
+    }
+    if (action === 'client-context') {
+      const portals = await listClientPortals(caller);
+      const maintenance = await restRows(`cuotly_members?user_id=eq.${encodeURIComponent(caller.id)}&active=is.true&deleted_at=is.null&select=id&limit=1`);
+      return res.status(200).json({ ok: true, portals, clientOnly: portals.length > 0 && maintenance.length === 0 });
     }
     if (action === 'bootstrap') {
       const portalId = String(req.query?.portalId || body.portalId || '');
