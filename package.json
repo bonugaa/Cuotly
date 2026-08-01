@@ -6,5 +6,8 @@
   "scripts": {
     "build": "node build.mjs",
     "start": "node build.mjs && npx serve dist"
+  },
+  "dependencies": {
+    "web-push": "^3.6.7"
   }
 }

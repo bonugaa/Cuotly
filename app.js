@@ -709,6 +709,10 @@ async function logout() {
     renderAuthScreen('login', 'Sesion cerrada.');
     return;
   }
+  const token = app.auth.session?.access_token || await getAccessToken();
+  if (token && window.CuotlyPush?.unsubscribe) {
+    await window.CuotlyPush.unsubscribe(token).catch(() => {});
+  }
   const { error } = await app.auth.client.auth.signOut();
   app.auth.session = null;
   app.auth.user = null;
@@ -2575,13 +2579,13 @@ function accountTabContent(profile) {
     const n = profile.notifications;
     return `
       <h2>Notificaciones</h2>
-      <p class="settings-copy">Los avisos se muestran dentro de Cuotly. Puedes permitir avisos del navegador para recibirlos también en el móvil cuando tengas la aplicación abierta.</p>
+      <p class="settings-copy">Los avisos se muestran dentro de Cuotly y, si activas este dispositivo, también como notificaciones del móvil aunque la aplicación esté cerrada.</p>
       <form id="accountNotificationsForm">
         <label class="toggle-row"><span><strong>Avisos en Cuotly</strong><small>Alertas dentro de tu cuenta.</small></span><input name="app" type="checkbox" ${n.app !== false ? 'checked' : ''}></label>
-        <label class="toggle-row"><span><strong>Avisos en este dispositivo</strong><small>Solicita permiso al navegador para mostrar avisos en ordenador o móvil.</small></span><input name="push" type="checkbox" ${n.push ? 'checked' : ''}></label>
+        <label class="toggle-row"><span><strong>Avisos en este dispositivo</strong><small>Recibe mensajes y avisos en este móvil aunque Quotly no esté abierta.</small></span><input name="push" type="checkbox" ${n.push ? 'checked' : ''}></label>
         <label class="toggle-row"><span><strong>Trabajos asignados</strong><small>Cuando te asignen o actualicen un cambio.</small></span><input name="assignments" type="checkbox" ${n.assignments !== false ? 'checked' : ''}></label>
         <label class="toggle-row"><span><strong>Pagos y renovaciones</strong><small>Solo si tu permiso te permite verlos.</small></span><input name="payments" type="checkbox" ${n.payments !== false ? 'checked' : ''}></label>
-        <button class="primary-button">Guardar preferencias</button>
+        <div class="form-actions"><button class="primary-button">Guardar preferencias</button>${n.push ? '<button type="button" class="secondary-button" data-action="test-push">Enviar aviso de prueba</button>' : ''}</div>
       </form>
     `;
   }
@@ -2654,16 +2658,21 @@ async function handleAccountProfileSubmit(form) {
 async function handleAccountNotifications(form) {
   const data = new FormData(form);
   const preferences = { app: data.has('app'), push: data.has('push'), assignments: data.has('assignments'), reminders: true, payments: data.has('payments') };
-  if (preferences.push && 'Notification' in window && Notification.permission === 'default') await Notification.requestPermission();
-  if (preferences.push && 'Notification' in window && Notification.permission === 'denied') {
-    preferences.push = false;
-    showToast('El navegador tiene los avisos bloqueados. Puedes activarlos desde sus ajustes.');
-  }
   try {
+    const token = await getAccessToken();
+    if (preferences.push) await window.CuotlyPush.subscribe(token, { messages: true, assignments: preferences.assignments, payments: preferences.payments });
+    else await window.CuotlyPush.unsubscribe(token);
     await updateAccountProfile({ full_name: accountProfile().fullName, phone: accountProfile().phone, job_title: accountProfile().jobTitle, bio: accountProfile().bio, avatar_url: accountProfile().avatarUrl, notification_preferences: preferences });
     renderAccount();
     showToast('Preferencias guardadas');
   } catch (error) { showToast(error.message || 'No se pudieron guardar las preferencias.'); }
+}
+
+async function sendPushTest() {
+  try {
+    const result = await window.CuotlyPush.test(await getAccessToken());
+    showToast(result.sent ? 'Aviso de prueba enviado al dispositivo.' : 'No encontramos un dispositivo activo. Activa primero los avisos.');
+  } catch (error) { showToast(error.message || 'No se pudo enviar el aviso de prueba.'); }
 }
 
 function openPasswordModal() {
@@ -3991,6 +4000,7 @@ async function handleClick(event) {
   if (action === 'auth-google') { handleGoogleLogin(); return; }
   if (action === 'start-mfa-enroll') { await startMfaEnrollment(); return; }
   if (action === 'account-tab') { app.accountTab = actionEl.dataset.tab; renderAccount(); return; }
+  if (action === 'test-push') { await sendPushTest(); return; }
   if (action === 'open-password-modal') { openPasswordModal(); return; }
   if (action === 'open-backup-mfa') { app.auth.mfaEnrollment = null; closeModal(); renderMfaScreen('setup'); return; }
   if (action === 'open-delete-account-modal') { openDeleteAccountModal(); return; }
