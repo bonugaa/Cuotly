@@ -149,6 +149,7 @@ const app = {
     needsSetup: false,
     accessCheckTimer: null,
   },
+  pendingInvitation: null,
   persistence: {
     loading: false,
     saveTimer: null,
@@ -498,13 +499,21 @@ function renderWorkspaceGate(message = '') {
     <section class="auth-card workspace-gate">
       <div class="auth-brand"><span class="brand-mark">Q</span><strong>Cuotly</strong></div>
       ${message ? `<div class="auth-message">${esc(message)}</div>` : ''}
-      <h1>${workspaces.length ? 'Elige tu espacio' : 'Crea tu espacio de trabajo'}</h1>
-      <p>${workspaces.length ? 'Tu cuenta puede pertenecer a varios espacios de Cuotly. Elige donde quieres trabajar.' : 'No tienes acceso a ningun espacio activo. Puedes crear el tuyo desde aqui.'}</p>
+      <h1>${workspaces.length ? 'Elige tu espacio' : 'Empieza en Cuotly'}</h1>
+      <p>${workspaces.length ? 'Tu cuenta puede pertenecer a varios espacios de Cuotly. Elige donde quieres trabajar.' : 'Tu cuenta ya está creada. Ahora puedes crear un espacio privado o unirte al que te hayan invitado.'}</p>
       ${workspaces.length ? `<div class="workspace-list">${workspaces.map(space => `<button class="secondary-button workspace-choice" data-action="switch-workspace" data-id="${space.id}"><span><strong>${esc(space.name)}</strong><small>${esc(ROLE_LABELS[space.role] || space.role)}</small></span><b>Entrar</b></button>`).join('')}</div>` : ''}
       <form id="workspaceCreateForm" class="auth-form workspace-create-form">
         <label>Nombre del nuevo espacio<input name="workspaceName" required maxlength="120" placeholder="Ej. Casa Paco o Madrid"></label>
         <button class="primary-button full-width">Crear espacio</button>
       </form>
+      <div class="invite-join-box">
+        <div><strong>¿Te han enviado una invitación?</strong><p>Pega aquí el enlace recibido para comprobarlo y unirte al espacio o al panel de restaurante.</p></div>
+        <form id="invitationLinkForm" class="auth-form">
+          <label>Enlace de invitación<input name="invitationLink" type="url" required placeholder="https://.../?invite=..." autocomplete="off"></label>
+          <button class="secondary-button full-width">Unirme con invitación</button>
+        </form>
+        <small class="muted-note">Puedes usar esta opción como máximo 3 veces al mes.</small>
+      </div>
       <button class="text-button auth-switch" data-action="logout">Cerrar sesion</button>
     </section>
   `;
@@ -2556,6 +2565,15 @@ function renderAccount() {
 }
 
 function accountTabContent(profile) {
+  if (false && app.accountTab === 'espacios') {
+    const spaces = app.workspace.workspaces || [];
+    return `
+      <h2>Mis espacios</h2>
+      <p class="settings-copy">Cada espacio mantiene sus restaurantes, equipo y datos separados. Tu cuenta puede ser propietaria de varios y colaborar en otros.</p>
+      <div class="workspace-list settings-workspaces">${spaces.map(space => `<article class="workspace-row ${space.id === app.workspace.id ? 'active-space' : ''}"><button class="secondary-button workspace-choice" data-action="switch-workspace" data-id="${space.id}"><span><strong>${esc(space.name)}</strong><small>${esc(ROLE_LABELS[space.role] || space.role)}</small></span><b>${space.id === app.workspace.id ? 'Actual' : 'Abrir'}</b></button>${space.role === 'owner' ? `<button class="small-button danger-text" data-action="delete-workspace" data-id="${space.id}">Eliminar</button>` : ''}</article>`).join('')}</div>
+      <form id="workspaceCreateForm" class="settings-danger"><h2>Crear espacio</h2><p class="settings-copy">El nuevo espacio será privado y empezará vacío.</p><label>Nombre del espacio<input name="workspaceName" required maxlength="120" placeholder="El nombre que quieras"></label><button class="secondary-button">Crear espacio</button></form>
+    `;
+  }
   if (app.accountTab === 'espacios') {
     const spaces = app.workspace.workspaces || [];
     return `
@@ -2563,6 +2581,7 @@ function accountTabContent(profile) {
       <p class="settings-copy">Cada espacio mantiene sus restaurantes, equipo y datos separados. Tu cuenta puede ser propietaria de varios y colaborar en otros.</p>
       <div class="workspace-list settings-workspaces">${spaces.map(space => `<article class="workspace-row ${space.id === app.workspace.id ? 'active-space' : ''}"><button class="secondary-button workspace-choice" data-action="switch-workspace" data-id="${space.id}"><span><strong>${esc(space.name)}</strong><small>${esc(ROLE_LABELS[space.role] || space.role)}</small></span><b>${space.id === app.workspace.id ? 'Actual' : 'Abrir'}</b></button>${space.role === 'owner' ? `<button class="small-button danger-text" data-action="delete-workspace" data-id="${space.id}">Eliminar</button>` : ''}</article>`).join('')}</div>
       <form id="workspaceCreateForm" class="settings-danger"><h2>Crear espacio</h2><p class="settings-copy">El nuevo espacio será privado y empezará vacío.</p><label>Nombre del espacio<input name="workspaceName" required maxlength="120" placeholder="El nombre que quieras"></label><button class="secondary-button">Crear espacio</button></form>
+      <div class="settings-danger invite-join-box"><h2>Unirme con invitación</h2><p class="settings-copy">Pega un enlace para unirte a un espacio de mantenimiento o a un panel de restaurante. Esta opción está limitada a 3 usos al mes.</p><form id="invitationLinkForm" class="auth-form"><label>Enlace de invitación<input name="invitationLink" type="url" required placeholder="https://.../?invite=..." autocomplete="off"></label><button class="secondary-button">Comprobar enlace</button></form></div>
     `;
   }
   if (app.accountTab === 'seguridad') {
@@ -4005,6 +4024,7 @@ async function handleClick(event) {
   if (action === 'open-backup-mfa') { app.auth.mfaEnrollment = null; closeModal(); renderMfaScreen('setup'); return; }
   if (action === 'open-delete-account-modal') { openDeleteAccountModal(); return; }
   if (action === 'export-account-data') { exportAccountData(); return; }
+  if (action === 'accept-pasted-invitation') { await acceptPastedInvitation(); return; }
   if (action === 'answer-invitation') { await answerInvitation(id, actionEl.dataset.answer); return; }
   if (action === 'switch-workspace') { await switchWorkspace(id); return; }
   if (action === 'delete-workspace') { await deleteWorkspace(id); return; }
@@ -4097,6 +4117,7 @@ async function handleSubmit(event) {
   if (form.id === 'memberForm') handleMemberSubmit(form);
   if (form.id === 'planChangeForm') handlePlanChangeSubmit(form);
   if (form.id === 'workspaceCreateForm') { createWorkspaceFromForm(form); return; }
+  if (form.id === 'invitationLinkForm') { joinByInvitationLink(form); return; }
   if (form.id === 'reportForm') {
     const data = Object.fromEntries(new FormData(form));
     const report = await generateReport(data.restaurantId, data.month);
@@ -4127,21 +4148,10 @@ async function ensurePersonalWorkspace() {
   const result = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(result.error || 'No se pudieron cargar tus espacios.');
   const spaces = result.workspaces || [];
-  const personal = spaces.find(space => space.role === 'owner');
-  if (personal) {
-    app.workspace.workspaces = spaces;
-    return;
-  }
-  const created = await fetch('/api/shared-state', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
-    body: JSON.stringify({ action: 'create-workspace', name: 'Mi espacio', state: seedState() }),
-  });
-  const createdResult = await created.json().catch(() => ({}));
-  if (!created.ok) throw new Error(createdResult.error || 'No se pudo crear Mi espacio.');
-  app.workspace.workspaces = createdResult.workspaces || [];
-  // A personal space is always available after creating the account, even when an invitation is pending.
-  if (!localStorage.getItem(workspaceSelectionKey())) localStorage.setItem(workspaceSelectionKey(), createdResult.workspace.id);
+  // A maintenance space is optional. New accounts can create one later or enter
+  // through an invitation without receiving an automatic empty workspace.
+  app.workspace.workspaces = spaces;
+  app.workspace.needsSetup = spaces.length === 0;
 }
 
 async function redirectClientOnlyAccount() {
@@ -4194,6 +4204,66 @@ async function answerInvitation(inviteId, answer) {
   await startApp();
 }
 
+async function joinByInvitationLink(form) {
+  const data = new FormData(form);
+  const link = String(data.get('invitationLink') || '').trim();
+  if (!link) return;
+  const button = form.querySelector('button');
+  if (button) { button.disabled = true; button.textContent = 'Comprobando...'; }
+  try {
+    const token = await getAccessToken();
+    const response = await fetch('/api/invitation-link', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+      body: JSON.stringify({ link }),
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result.error || 'No se pudo comprobar el enlace.');
+    app.pendingInvitation = result.invitation;
+    openModal(modalFrame('Invitación recibida', 'CUOTLY', `
+      <div class="invite-decision">
+        <p>Esta invitación es para <strong>${esc(result.invitation.targetName)}</strong>.</p>
+        <p>Entrarás como <strong>${esc(result.invitation.roleLabel)}</strong> y tu cuenta seguirá separada de los demás espacios.</p>
+        <p class="settings-copy">Uso mensual: ${esc(String(result.usage.used))} de ${esc(String(result.usage.limit))}. La invitación caduca a los 30 días.</p>
+      </div>
+      <div class="modal-actions"><button class="secondary-button" data-action="close-modal">Cancelar</button><button class="primary-button" data-action="accept-pasted-invitation">Aceptar y unirme</button></div>
+    `));
+  } catch (error) {
+    showToast(error.message || 'No se pudo comprobar el enlace.');
+  } finally {
+    if (button) { button.disabled = false; button.textContent = 'Comprobar enlace'; }
+  }
+}
+
+async function acceptPastedInvitation() {
+  const invitation = app.pendingInvitation;
+  if (!invitation) return;
+  const token = await getAccessToken();
+  try {
+    if (invitation.kind === 'maintenance') {
+      await answerInvitation(invitation.id, 'accept');
+      app.pendingInvitation = null;
+      return;
+    }
+    const response = await fetch('/api/client-portal?action=accept-client-invite', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+      body: JSON.stringify({ inviteId: invitation.id }),
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result.error || 'No se pudo aceptar la invitación.');
+    app.pendingInvitation = null;
+    const url = new URL(window.location.href);
+    url.searchParams.delete('invite');
+    url.searchParams.set('clientInvite', invitation.id);
+    url.searchParams.set('clientPortal', result.portalId);
+    url.searchParams.set('clientOnly', '1');
+    window.location.replace(url.toString());
+  } catch (error) {
+    showToast(error.message || 'No se pudo aceptar la invitación.');
+  }
+}
+
 async function startApp() {
   if (!app.auth.user) return;
   if (window.CuotlyClientPortal?.requested?.()) {
@@ -4214,6 +4284,7 @@ async function startApp() {
     return;
   }
   await loadState();
+  await checkInvitationFromLink();
   if (app.workspace.needsSetup) {
     stopWorkspaceAccessCheck();
     renderWorkspaceGate();
@@ -4225,7 +4296,6 @@ async function startApp() {
   render();
   app.booted = true;
   startWorkspaceAccessCheck();
-  await checkInvitationFromLink();
   if (app.auth.client && !app.persistence.cloudAvailable) {
     showToast('Falta ejecutar la actualizacion de Supabase para sincronizar dispositivos');
   }
