@@ -150,6 +150,7 @@ const app = {
     accessCheckTimer: null,
   },
   pendingInvitation: null,
+  accountHub: { loading: false, data: null },
   persistence: {
     loading: false,
     saveTimer: null,
@@ -543,6 +544,7 @@ async function createWorkspaceFromForm(form) {
     app.workspace.name = result.workspace.name;
     app.workspace.workspaces = result.workspaces || [];
     app.workspace.needsSetup = false;
+    app.accountHub.data = null;
     localStorage.setItem(workspaceSelectionKey(), app.workspace.id);
     app.state = normalizeState(result.state);
     applyAuthUserToState();
@@ -562,6 +564,7 @@ async function switchWorkspace(id) {
   localStorage.setItem(workspaceSelectionKey(), id);
   app.workspace.id = id;
   app.workspace.needsSetup = false;
+  app.accountHub.data = null;
   app.booted = false;
   await startApp();
 }
@@ -584,6 +587,7 @@ async function deleteWorkspace(id) {
     const result = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(result.error || 'No se pudo eliminar el espacio.');
     app.workspace.workspaces = result.workspaces || [];
+    app.accountHub.data = null;
     if (id === app.workspace.id) {
       stopWorkspaceAccessCheck();
       localStorage.removeItem(workspaceSelectionKey());
@@ -2552,9 +2556,31 @@ function planCard(p) {
   `;
 }
 
+async function accountHubApi(action = '', body = {}, method = 'GET') {
+  const token = await getAccessToken();
+  if (!token) throw new Error('Tu sesion ha terminado.');
+  const response = await fetch('/api/account-hub', { method, headers: { authorization: `Bearer ${token}`, ...(method === 'GET' ? {} : { 'content-type': 'application/json' }) }, body: method === 'GET' ? undefined : JSON.stringify({ action, ...body }) });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(result.error || 'No se pudo cargar la cuenta.');
+  return result;
+}
+
+async function loadAccountHub(force = false) {
+  if (app.accountHub.loading || (app.accountHub.data && !force)) return app.accountHub.data;
+  app.accountHub.loading = true;
+  try { app.accountHub.data = await accountHubApi(); return app.accountHub.data; }
+  catch (error) { showToast(error.message || 'No se pudo cargar la cuenta.'); return null; }
+  finally { app.accountHub.loading = false; if (app.view === 'cuenta') renderAccount(); }
+}
+
+function accountAccessCards(items, options = {}) {
+  return (items || []).map(item => `<article class="workspace-row account-access-row"><div><strong>${esc(item.name)}</strong><small>${esc(item.roleLabel || ROLE_LABELS[item.role] || item.role)} · ${item.active ? 'Activo' : 'Sin acceso'}</small></div><div class="row-actions">${options.openAction && item.active ? `<button class="small-button" data-action="${options.openAction}" data-id="${esc(item.id)}">Abrir</button>` : ''}${options.leaveAction && item.active && item.role !== 'owner' ? `<button class="small-button danger-text" data-action="${options.leaveAction}" data-id="${esc(item.id)}">Abandonar</button>` : ''}</div></article>`).join('') || '<p class="muted-note">No hay accesos en esta sección.</p>';
+}
+
 function renderAccount() {
+  if (!app.accountHub.data && !app.accountHub.loading) loadAccountHub();
   const profile = accountProfile();
-  const tabs = [['perfil', 'Perfil'], ['espacios', 'Mis espacios'], ['seguridad', 'Seguridad'], ['notificaciones', 'Notificaciones'], ['privacidad', 'Privacidad']];
+  const tabs = [['perfil', 'Perfil'], ['espacios', 'Mantenimientos'], ['restaurantes', 'Restaurantes'], ['invitaciones', 'Invitaciones'], ['historial', 'Historial'], ['seguridad', 'Seguridad'], ['notificaciones', 'Notificaciones'], ['privacidad', 'Privacidad']];
   $('#view-cuenta').innerHTML = `
     <div class="page-heading compact"><div><p class="eyebrow">CUENTA PERSONAL</p><h1>Mi cuenta</h1><p>Tu perfil es privado. Los espacios en los que trabajas y tus permisos se gestionan por separado.</p></div></div>
     <div class="settings-layout account-layout">
@@ -2565,12 +2591,28 @@ function renderAccount() {
 }
 
 function accountTabContent(profile) {
+  const hub = app.accountHub.data || { maintenance: [], restaurants: [], history: [], invitations: { maintenance: [], restaurants: [] }, rejoinUsage: { used: 0, remaining: 3, limit: 3 }, pendingRejoins: [] };
+  if (app.accountHub.loading && !app.accountHub.data) return '<div class="loading-state">Cargando los accesos de tu cuenta...</div>';
+  if (app.accountTab === 'restaurantes') {
+    return `<h2>Mis restaurantes</h2><p class="settings-copy">Aquí solo aparecen los paneles de restaurante a los que tu cuenta tiene acceso. Cada panel mantiene sus datos separados.</p><div class="workspace-list settings-workspaces">${accountAccessCards(hub.restaurants, { openAction: 'open-account-restaurant', leaveAction: 'leave-account-restaurant' })}</div>`;
+  }
+  if (app.accountTab === 'invitaciones') {
+    const maintenanceInvites = (hub.invitations.maintenance || []).map(item => `<article class="security-card"><div><strong>${esc(item.targetName)}</strong><p>${esc(item.roleLabel)} · caduca ${formatDate(item.expiresAt, { short: true })}</p></div><div class="row-actions"><button class="small-button danger-text" data-action="answer-invitation" data-answer="reject" data-id="${esc(item.id)}">Rechazar</button><button class="small-button" data-action="answer-invitation" data-answer="accept" data-id="${esc(item.id)}">Aceptar</button></div></article>`).join('');
+    const restaurantInvites = (hub.invitations.restaurants || []).map(item => `<article class="security-card"><div><strong>${esc(item.targetName)}</strong><p>${esc(item.roleLabel)} · caduca ${formatDate(item.expiresAt, { short: true })}</p></div><div class="row-actions"><button class="small-button danger-text" data-action="answer-client-invitation" data-answer="reject" data-id="${esc(item.id)}">Rechazar</button><button class="small-button" data-action="answer-client-invitation" data-answer="accept" data-id="${esc(item.id)}">Aceptar</button></div></article>`).join('');
+    const inviteCards = `${maintenanceInvites}${restaurantInvites}`;
+    return `<h2>Invitaciones</h2><p class="settings-copy">Las invitaciones duran 30 días. Al aceptarlas se añade solo el acceso correspondiente a tu cuenta.</p><div class="settings-stack">${inviteCards || '<p class="muted-note">No tienes invitaciones pendientes.</p>'}</div><div class="invite-join-box"><h3>Usar enlace de invitación</h3><p class="settings-copy">También puedes pegar un enlace. Límite: 3 usos al mes.</p><form id="invitationLinkForm" class="auth-form"><label>Enlace de invitación<input name="invitationLink" type="url" required placeholder="https://.../?invite=..." autocomplete="off"></label><button class="secondary-button">Comprobar enlace</button></form></div>`;
+  }
+  if (app.accountTab === 'historial') {
+    const history = (hub.history || []).map(item => `<article class="security-card"><div><strong>${esc(item.name)}</strong><p>${item.kind === 'maintenance' ? 'Mantenimiento' : 'Restaurante'} · ${esc(item.roleLabel || item.role)}${item.leftAt ? ` · salida ${formatDateTime(item.leftAt)}` : ''}</p></div>${item.canRequestRejoin ? `<button class="small-button" data-action="request-rejoin" data-kind="${item.kind}" data-id="${esc(item.id)}" data-role="${esc(item.role || '')}">Solicitar acceso</button>` : '<span class="muted-note">Bloqueado temporalmente</span>'}</article>`).join('');
+    const requests = (hub.pendingRejoins || []).map(item => `<article class="security-card"><div><strong>Solicitud para ${esc(item.targetName)}</strong><p>${esc(item.display_name || item.email)} · ${formatDateTime(item.created_at)}</p></div><div class="row-actions"><button class="small-button danger-text" data-action="review-rejoin" data-answer="reject" data-id="${esc(item.id)}">Rechazar</button><button class="small-button" data-action="review-rejoin" data-answer="approve" data-id="${esc(item.id)}">Aprobar</button></div></article>`).join('');
+    return `<h2>Historial de accesos</h2><p class="settings-copy">Los accesos anteriores se conservan. Has usado ${hub.rejoinUsage.used} de ${hub.rejoinUsage.limit} solicitudes este mes.</p><div class="settings-stack">${history || '<p class="muted-note">Todavía no hay accesos anteriores.</p>'}</div>${requests ? `<h3>Solicitudes que puedes revisar</h3><div class="settings-stack">${requests}</div>` : ''}`;
+  }
   if (false && app.accountTab === 'espacios') {
     const spaces = app.workspace.workspaces || [];
     return `
       <h2>Mis espacios</h2>
       <p class="settings-copy">Cada espacio mantiene sus restaurantes, equipo y datos separados. Tu cuenta puede ser propietaria de varios y colaborar en otros.</p>
-      <div class="workspace-list settings-workspaces">${spaces.map(space => `<article class="workspace-row ${space.id === app.workspace.id ? 'active-space' : ''}"><button class="secondary-button workspace-choice" data-action="switch-workspace" data-id="${space.id}"><span><strong>${esc(space.name)}</strong><small>${esc(ROLE_LABELS[space.role] || space.role)}</small></span><b>${space.id === app.workspace.id ? 'Actual' : 'Abrir'}</b></button>${space.role === 'owner' ? `<button class="small-button danger-text" data-action="delete-workspace" data-id="${space.id}">Eliminar</button>` : ''}</article>`).join('')}</div>
+      <div class="workspace-list settings-workspaces">${spaces.map(space => `<article class="workspace-row ${space.id === app.workspace.id ? 'active-space' : ''}"><button class="secondary-button workspace-choice" data-action="switch-workspace" data-id="${space.id}"><span><strong>${esc(space.name)}</strong><small>${esc(ROLE_LABELS[space.role] || space.role)}</small></span><b>${space.id === app.workspace.id ? 'Actual' : 'Abrir'}</b></button>${space.role === 'owner' ? `<button class="small-button danger-text" data-action="delete-workspace" data-id="${space.id}">Eliminar</button>` : `<button class="small-button danger-text" data-action="leave-account-maintenance" data-id="${space.id}">Abandonar</button>`}</article>`).join('')}</div>
       <form id="workspaceCreateForm" class="settings-danger"><h2>Crear espacio</h2><p class="settings-copy">El nuevo espacio será privado y empezará vacío.</p><label>Nombre del espacio<input name="workspaceName" required maxlength="120" placeholder="El nombre que quieras"></label><button class="secondary-button">Crear espacio</button></form>
     `;
   }
@@ -2579,7 +2621,7 @@ function accountTabContent(profile) {
     return `
       <h2>Mis espacios</h2>
       <p class="settings-copy">Cada espacio mantiene sus restaurantes, equipo y datos separados. Tu cuenta puede ser propietaria de varios y colaborar en otros.</p>
-      <div class="workspace-list settings-workspaces">${spaces.map(space => `<article class="workspace-row ${space.id === app.workspace.id ? 'active-space' : ''}"><button class="secondary-button workspace-choice" data-action="switch-workspace" data-id="${space.id}"><span><strong>${esc(space.name)}</strong><small>${esc(ROLE_LABELS[space.role] || space.role)}</small></span><b>${space.id === app.workspace.id ? 'Actual' : 'Abrir'}</b></button>${space.role === 'owner' ? `<button class="small-button danger-text" data-action="delete-workspace" data-id="${space.id}">Eliminar</button>` : ''}</article>`).join('')}</div>
+      <div class="workspace-list settings-workspaces">${spaces.map(space => `<article class="workspace-row ${space.id === app.workspace.id ? 'active-space' : ''}"><button class="secondary-button workspace-choice" data-action="switch-workspace" data-id="${space.id}"><span><strong>${esc(space.name)}</strong><small>${esc(ROLE_LABELS[space.role] || space.role)}</small></span><b>${space.id === app.workspace.id ? 'Actual' : 'Abrir'}</b></button>${space.role === 'owner' ? `<button class="small-button danger-text" data-action="delete-workspace" data-id="${space.id}">Eliminar</button>` : `<button class="small-button danger-text" data-action="leave-account-maintenance" data-id="${space.id}">Abandonar</button>`}</article>`).join('')}</div>
       <form id="workspaceCreateForm" class="settings-danger"><h2>Crear espacio</h2><p class="settings-copy">El nuevo espacio será privado y empezará vacío.</p><label>Nombre del espacio<input name="workspaceName" required maxlength="120" placeholder="El nombre que quieras"></label><button class="secondary-button">Crear espacio</button></form>
       <div class="settings-danger invite-join-box"><h2>Unirme con invitación</h2><p class="settings-copy">Pega un enlace para unirte a un espacio de mantenimiento o a un panel de restaurante. Esta opción está limitada a 3 usos al mes.</p><form id="invitationLinkForm" class="auth-form"><label>Enlace de invitación<input name="invitationLink" type="url" required placeholder="https://.../?invite=..." autocomplete="off"></label><button class="secondary-button">Comprobar enlace</button></form></div>
     `;
@@ -2592,6 +2634,7 @@ function accountTabContent(profile) {
       <div class="security-card"><div><strong>Contraseña</strong><p>${provider ? 'Tu cuenta puede acceder con email y contraseña.' : 'Entraste con Google. Puedes crear una contraseña para tener ambas formas de acceso.'}</p></div><button class="secondary-button" data-action="open-password-modal">${provider ? 'Cambiar contraseña' : 'Crear contraseña'}</button></div>
       <div class="security-card"><div><strong>Verificación en dos pasos</strong><p>Está activada y es obligatoria para acceder a Cuotly.</p></div><button class="secondary-button" data-action="open-backup-mfa">Añadir autenticador de respaldo</button></div>
       <p class="muted-note">Guarda el autenticador de respaldo en otro dispositivo. Supabase no ofrece códigos de recuperación.</p>
+      <div class="security-card"><div><strong>Cerrar sesión en todos los dispositivos</strong><p>Revoca las sesiones abiertas y vuelve a entrar desde este dispositivo.</p></div><button class="secondary-button" data-action="logout-all">Cerrar todas</button></div>
     `;
   }
   if (app.accountTab === 'notificaciones') {
@@ -2611,8 +2654,7 @@ function accountTabContent(profile) {
   if (app.accountTab === 'privacidad') {
     return `
       <h2>Privacidad y datos</h2>
-      <p class="settings-copy">Puedes descargar los datos de tu cuenta: perfil, preferencias, espacios y permisos. No contiene contraseñas, códigos de autenticación ni datos privados de otras personas.</p>
-      <div class="security-card"><div><strong>Descargar mis datos</strong><p>Genera un archivo privado en formato JSON.</p></div><button class="secondary-button" data-action="export-account-data">Descargar datos</button></div>
+      <p class="settings-copy">Tu perfil es privado. Cuotly solo muestra a cada persona los espacios, restaurantes y permisos que le corresponden.</p>
       <div class="settings-danger"><h2>Eliminar cuenta</h2><p>Se eliminarán tus espacios propios y tu perfil. En los espacios de otros se conservará el historial de tareas y notas como “Cuenta eliminada”.</p><button class="danger-button" data-action="open-delete-account-modal">Eliminar mi cuenta</button></div>
     `;
   }
@@ -2942,6 +2984,7 @@ function handleRestaurantNoteSubmit(form) {
   } else {
     restaurant.noteEntries.push({ id: uid('note'), text, authorId: user.id, authorName: user.name, createdAt: nowIso() });
   }
+  saveState();
   closeModal();
   showToast(existing ? 'Nota actualizada' : 'Nota compartida con el equipo');
   render();
@@ -3214,6 +3257,7 @@ function handleRestaurantSubmit(form) {
     app.state.restaurants.push(payload);
     app.selectedRestaurantId = id;
   }
+  saveState();
   closeModal();
   showToast(existing ? 'Ficha del restaurante guardada' : 'Restaurante creado');
   showView(existing ? app.view : 'restaurante-detalle', { restaurantId: id });
@@ -3260,6 +3304,7 @@ function handleServiceSubmit(form) {
   payload.assignedTo = payload.assignedMemberIds[0] || '';
   if (existing) Object.assign(existing, payload);
   else app.state.services.push(payload);
+  saveState();
   app.selectedRestaurantId = data.restaurantId;
   closeModal();
   refreshBilling();
@@ -3274,6 +3319,7 @@ function handleServiceTeamSubmit(form) {
   const ids = new FormData(form).getAll('assignedMemberIds').filter(Boolean);
   service.assignedMemberIds = [...new Set(ids)];
   service.assignedTo = service.assignedMemberIds[0] || '';
+  saveState();
   closeModal();
   showToast('Equipo del servicio actualizado');
   render();
@@ -3343,6 +3389,7 @@ function handleTaskSubmit(form) {
   }
   if (existing) Object.assign(existing, payload);
   else app.state.tasks.push(payload);
+  saveState();
   closeModal();
   showToast(existing ? 'Cambio actualizado' : 'Cambio registrado');
   render();
@@ -3397,6 +3444,7 @@ async function handleExtraCreditSubmit(form) {
     return;
   }
   showToast('Credito guardado como pendiente de pago');
+  saveState();
   render();
 }
 
@@ -3453,6 +3501,7 @@ function restoreMember(id) {
   if (!member || member.role === 'owner') return;
   member.active = true;
   member.removedAt = '';
+  saveState();
   showToast('Miembro reactivado con sus asignaciones anteriores');
   render();
 }
@@ -3515,6 +3564,7 @@ function handlePlanChangeSubmit(form) {
       notes: data.notes?.trim() || '',
     };
     app.state.reminders.push({ id: uid('rem'), type: 'plan_downgrade', serviceId: service.id, createdAt: nowIso(), notes: `Bajada a ${plan(newPlan).name} programada para el siguiente ciclo.` });
+    saveState();
     closeModal();
     showToast('Bajada de plan programada para la siguiente renovacion');
     render();
@@ -3770,6 +3820,7 @@ function setTaskStatus(id, status) {
     task.cancelledAt = nowIso();
     task.reservedAt = '';
   }
+  saveState();
   showToast(status === 'completed' ? 'Cambio completado y cuota descontada' : 'Estado actualizado');
   render();
 }
@@ -3781,11 +3832,12 @@ function removeMember(id) {
   if (!confirm(`Expulsar a ${member.name}? Perdera el acceso de inmediato, pero podras reactivarlo desde Ajustes.`)) return;
   member.active = false;
   member.removedAt = nowIso();
+  saveState();
   showToast('Miembro expulsado');
   render();
 }
 
-function deleteRestaurant(id) {
+async function deleteRestaurant(id) {
   if (!canDeleteRestaurant()) return;
   const restaurant = restaurantById(id);
   if (!restaurant) return;
@@ -3795,6 +3847,14 @@ function deleteRestaurant(id) {
   const paymentCount = app.state.payments.filter(payment => payment.restaurantId === id || serviceIds.has(payment.serviceId)).length;
   const message = `Borrar ${restaurant.name}? Se eliminaran tambien ${serviceCount} servicios, ${taskCount} tareas, ${paymentCount} pagos e informes de este restaurante.`;
   if (!confirm(message)) return;
+  if (restaurant.clientPortalId) {
+    try {
+      await clientPortalApi('delete-portal', { portalId: restaurant.clientPortalId });
+    } catch (error) {
+      showToast(error.message || 'No se pudo eliminar el panel del restaurante');
+      return;
+    }
+  }
   app.state.restaurants = app.state.restaurants.filter(item => item.id !== id);
   app.state.services = app.state.services.filter(service => service.restaurantId !== id);
   app.state.tasks = app.state.tasks.filter(task => task.restaurantId !== id && !serviceIds.has(task.serviceId));
@@ -3802,6 +3862,7 @@ function deleteRestaurant(id) {
   app.state.reports = app.state.reports.filter(report => report.restaurantId !== id);
   app.state.reminders = app.state.reminders.filter(reminder => reminder.restaurantId !== id && !serviceIds.has(reminder.serviceId));
   if (app.selectedRestaurantId === id) app.selectedRestaurantId = visibleRestaurants()[0]?.id || null;
+  saveState();
   showToast('Restaurante borrado');
   showView('restaurantes');
 }
@@ -3812,6 +3873,7 @@ function deleteTask(id) {
   if (!canSeeTask(task)) return;
   if (!confirm(`Borrar la tarea "${task.title}"? Si estaba completada, sus cuotas volveran a estar disponibles.`)) return;
   app.state.tasks = app.state.tasks.filter(item => item.id !== id);
+  saveState();
   showToast('Tarea borrada');
   render();
 }
@@ -3842,6 +3904,7 @@ function handlePauseServiceSubmit(form) {
   service.pausePlanDays = Math.min(31, Math.max(1, Number(data.plannedDays || 1)));
   service.pauseNotes = data.notes?.trim() || '';
   app.state.reminders.push({ id: uid('rem'), type: 'service_paused', serviceId: service.id, createdAt: nowIso(), notes: `Pausa iniciada el ${pausedAt}. ${service.pauseNotes}`.trim() });
+  saveState();
   closeModal();
   showToast('Servicio pausado y cuotas congeladas');
   render();
@@ -3860,6 +3923,7 @@ function resumeService(id) {
   service.pauseNotes = '';
   service.status = currentPaymentForService(service)?.status === 'paid' ? 'active' : 'pending';
   app.state.reminders.push({ id: uid('rem'), type: 'service_resumed', serviceId: service.id, createdAt: nowIso(), notes: `Servicio reanudado tras ${days} dia(s) de pausa.` });
+  saveState();
   showToast('Servicio reanudado; se conserva el tiempo y las cuotas restantes');
   render();
 }
@@ -3888,6 +3952,7 @@ function cancelService(id) {
     });
   }
   app.state.reminders.push({ id: uid('rem'), type: 'cancellation', serviceId: id, createdAt: nowIso(), notes: `Cancelacion programada para ${iso(effective)}.${lateNotice ? ' Aviso fuera de plazo: se mantiene un ciclo adicional.' : ''}${remainingMonths ? ` Permanencia pendiente estimada: ${euro(fee)} base.` : ''}` });
+  saveState();
   showToast('Cancelacion programada al finalizar el ciclo aplicable');
   render();
 }
@@ -3989,6 +4054,7 @@ function handleSettingsSubmit(form) {
     app.state.settings.workdays = String(data.workdays).split(',').map(Number);
     if (data.holidayDate && data.holidayName) app.state.settings.holidays.push({ id: uid('hol'), date: data.holidayDate, name: data.holidayName.trim() });
   }
+  saveState();
   showToast('Ajustes guardados');
   render();
 }
@@ -4020,12 +4086,19 @@ async function handleClick(event) {
   if (action === 'start-mfa-enroll') { await startMfaEnrollment(); return; }
   if (action === 'account-tab') { app.accountTab = actionEl.dataset.tab; renderAccount(); return; }
   if (action === 'test-push') { await sendPushTest(); return; }
+  if (action === 'logout-all') { await logoutAllDevices(); return; }
   if (action === 'open-password-modal') { openPasswordModal(); return; }
   if (action === 'open-backup-mfa') { app.auth.mfaEnrollment = null; closeModal(); renderMfaScreen('setup'); return; }
   if (action === 'open-delete-account-modal') { openDeleteAccountModal(); return; }
   if (action === 'export-account-data') { exportAccountData(); return; }
   if (action === 'accept-pasted-invitation') { await acceptPastedInvitation(); return; }
   if (action === 'answer-invitation') { await answerInvitation(id, actionEl.dataset.answer); return; }
+  if (action === 'answer-client-invitation') { await answerClientInvitation(id, actionEl.dataset.answer); return; }
+  if (action === 'open-account-restaurant') { openAccountRestaurant(id); return; }
+  if (action === 'leave-account-restaurant') { await leaveAccountAccess('restaurant', id); return; }
+  if (action === 'leave-account-maintenance') { await leaveAccountAccess('maintenance', id); return; }
+  if (action === 'request-rejoin') { await requestAccountRejoin(actionEl.dataset.kind, id, actionEl.dataset.role || ''); return; }
+  if (action === 'review-rejoin') { await reviewAccountRejoin(id, actionEl.dataset.answer); return; }
   if (action === 'switch-workspace') { await switchWorkspace(id); return; }
   if (action === 'delete-workspace') { await deleteWorkspace(id); return; }
   if (action === 'show-alerts') showAlertsModal();
@@ -4071,7 +4144,7 @@ async function handleClick(event) {
   if (action === 'restore-member') restoreMember(id);
   if (action === 'purge-member') await purgeMember(id);
   if (action === 'open-note-modal') openNoteModal(id, actionEl.dataset.note || '');
-  if (action === 'delete-restaurant') deleteRestaurant(id);
+  if (action === 'delete-restaurant') await deleteRestaurant(id);
   if (action === 'delete-task') deleteTask(id);
   if (action === 'cancel-service') cancelService(id);
   if (action === 'download-report') await downloadReport(id);
@@ -4079,7 +4152,7 @@ async function handleClick(event) {
   if (action === 'export-payments') exportPayments();
   if (action === 'export-tasks') exportTasks();
   if (action === 'export-restaurants') exportRestaurants();
-  if (action === 'remove-holiday') { app.state.settings.holidays = app.state.settings.holidays.filter(item => item.id !== id); render(); }
+  if (action === 'remove-holiday') { app.state.settings.holidays = app.state.settings.holidays.filter(item => item.id !== id); saveState(); render(); }
   if (action === 'calendar-prev') { app.calendarMonth = addMonths(app.calendarMonth, -1); renderCalendar(); }
   if (action === 'calendar-next') { app.calendarMonth = addMonths(app.calendarMonth, 1); renderCalendar(); }
   if (action === 'calendar-today') { app.calendarMonth = startOfMonth(new Date()); renderCalendar(); }
@@ -4202,6 +4275,68 @@ async function answerInvitation(inviteId, answer) {
   showToast(answer === 'accept' ? 'Te has unido al espacio.' : 'Invitación rechazada.');
   app.booted = false;
   await startApp();
+  await loadAccountHub(true);
+}
+
+function openAccountRestaurant(portalId) {
+  const url = new URL(window.location.href);
+  url.searchParams.set('clientPortal', portalId);
+  url.searchParams.set('clientOnly', '1');
+  window.location.assign(url.toString());
+}
+
+async function answerClientInvitation(inviteId, answer) {
+  try {
+    const result = await clientPortalApi('respond-client-invite', { inviteId, answer });
+    if (answer === 'accept' && result.portalId) {
+      const url = new URL(window.location.href);
+      url.searchParams.set('clientPortal', result.portalId);
+      url.searchParams.set('clientOnly', '1');
+      window.location.assign(url.toString());
+      return;
+    }
+    await loadAccountHub(true);
+    renderAccount();
+    showToast(answer === 'accept' ? 'Acceso añadido.' : 'Invitación rechazada.');
+  } catch (error) { showToast(error.message || 'No se pudo responder la invitación.'); }
+}
+
+async function leaveAccountAccess(kind, id) {
+  const label = kind === 'restaurant' ? 'este restaurante' : 'este espacio de mantenimiento';
+  if (!confirm(`¿Quieres abandonar ${label}? Perderás el acceso, pero el historial se conservará.`)) return;
+  try {
+    await accountHubApi(kind === 'restaurant' ? 'leave-restaurant' : 'leave-maintenance', { targetId: id }, 'POST');
+    app.accountHub.data = null;
+    await loadAccountHub(true);
+    renderAccount();
+    showToast('Acceso abandonado.');
+  } catch (error) { showToast(error.message || 'No se pudo abandonar el acceso.'); }
+}
+
+async function requestAccountRejoin(kind, id, role) {
+  const reason = prompt('Motivo opcional de la solicitud:', '') ?? '';
+  try {
+    await accountHubApi('request-rejoin', { kind, targetId: id, role, reason }, 'POST');
+    await loadAccountHub(true);
+    renderAccount();
+    showToast('Solicitud enviada al propietario.');
+  } catch (error) { showToast(error.message || 'No se pudo enviar la solicitud.'); }
+}
+
+async function reviewAccountRejoin(id, answer) {
+  try {
+    await accountHubApi('review-rejoin', { requestId: id, answer }, 'POST');
+    await loadAccountHub(true);
+    renderAccount();
+    showToast(answer === 'approve' ? 'Acceso reactivado.' : 'Solicitud rechazada.');
+  } catch (error) { showToast(error.message || 'No se pudo revisar la solicitud.'); }
+}
+
+async function logoutAllDevices() {
+  if (!app.auth.client || !confirm('¿Cerrar sesión en todos los dispositivos?')) return;
+  const { error } = await app.auth.client.auth.signOut({ scope: 'global' });
+  if (error) { showToast(error.message || 'No se pudieron cerrar todas las sesiones.'); return; }
+  showToast('Sesiones cerradas.');
 }
 
 async function joinByInvitationLink(form) {
