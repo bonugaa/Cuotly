@@ -36,6 +36,7 @@ export default async function handler(req, res) {
   const rows = response.ok ? await response.json().catch(() => []) : [];
   const invitation = rows[0];
   if (!invitation || String(invitation.email).toLowerCase() !== String(caller.email).toLowerCase()) return res.status(404).json({ error: 'No encontramos esta invitacion para tu cuenta.' });
+  if (new Date(invitation.created_at).getTime() + 30 * 86400000 <= Date.now()) return res.status(410).json({ error: 'Esta invitacion ha caducado.' });
   if (req.method === 'GET') return res.status(200).json({ ok: true, invitation: { id: invitation.id, workspaceName: invitation.workspace?.name || 'Espacio', role: invitation.role, status: invitation.status || (invitation.accepted_at ? 'accepted' : 'pending') } });
   if (req.method !== 'POST') return res.status(405).json({ error: 'Metodo no permitido.' });
   const answer = body.answer === 'reject' ? 'reject' : 'accept';

@@ -47,6 +47,14 @@ async function anonymiseAccount(user) {
     await rest(`cuotly_members?workspace_id=eq.${encodeURIComponent(row.workspace_id)}&email=ilike.${encodeURIComponent(row.email)}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ active: false, user_id: null, name: 'Cuenta eliminada', removed_at: new Date().toISOString(), deleted_at: new Date().toISOString() }) });
   }
   for (const workspaceId of owned) await rest(`cuotly_workspaces?id=eq.${encodeURIComponent(workspaceId)}&owner_id=eq.${encodeURIComponent(user.id)}`, { method: 'DELETE' });
+
+  const clientRowsResponse = await rest(`cuotly_client_members?user_id=eq.${encodeURIComponent(user.id)}&select=id,portal_id,email,role,portal:cuotly_client_portals(id,workspace_id,restaurant_id,state)`);
+  const clientRows = clientRowsResponse.ok ? await clientRowsResponse.json().catch(() => []) : [];
+  const deletedAt = new Date().toISOString();
+  for (const row of clientRows) {
+    await rest(`cuotly_client_members?id=eq.${encodeURIComponent(row.id)}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ active: false, user_id: null, name: 'Cuenta eliminada', removed_at: deletedAt }) });
+  }
+  if (user.email) await rest(`cuotly_client_invitations?email=ilike.${encodeURIComponent(user.email)}&status=eq.pending`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ status: 'cancelled', responded_at: deletedAt }) });
 }
 
 export default async function handler(req, res) {
@@ -60,8 +68,8 @@ export default async function handler(req, res) {
     const current = caller.user_metadata || {};
     const profile = {
       ...current,
-      full_name: String(body.profile?.full_name || '').trim().slice(0, 80),
-      name: String(body.profile?.full_name || '').trim().slice(0, 80),
+      full_name: String(body.profile?.full_name || current.full_name || current.name || caller.email?.split('@')[0] || '').trim().slice(0, 80),
+      name: String(body.profile?.full_name || current.full_name || current.name || caller.email?.split('@')[0] || '').trim().slice(0, 80),
       phone: String(body.profile?.phone || '').trim().slice(0, 40),
       job_title: String(body.profile?.job_title || '').trim().slice(0, 80),
       bio: String(body.profile?.bio || '').trim().slice(0, 280),

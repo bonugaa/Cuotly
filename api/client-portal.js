@@ -420,12 +420,25 @@ async function acceptInvite(caller, inviteId) {
   const invite = rows[0];
   if (!invite || cleanEmail(invite.email) !== cleanEmail(caller.email)) throw new Error('No encontramos esta invitacion para tu cuenta.');
   if (invite.portal?.status !== 'active') throw new Error('Este panel ya no esta disponible.');
+  if (new Date(invite.created_at).getTime() + 30 * 86400000 <= Date.now()) throw new Error('Esta invitacion ha caducado.');
   if (invite.status === 'rejected' || invite.status === 'cancelled') throw new Error('Esta invitacion ya no esta disponible.');
   const name = userName(caller);
   await restRows('cuotly_client_members?on_conflict=portal_id,email', { method: 'POST', headers: { 'content-type': 'application/json', prefer: 'resolution=merge-duplicates' }, body: JSON.stringify({ portal_id: invite.portal_id, user_id: caller.id, email: caller.email, name, role: invite.role, active: true, removed_at: null }) });
   await restRows(`cuotly_client_invitations?id=eq.${encodeURIComponent(invite.id)}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ status: 'accepted', accepted_by: caller.id, accepted_at: new Date().toISOString(), responded_at: new Date().toISOString() }) });
   await createActivity(invite.portal_id, null, 'client_joined', 'restaurant', caller.id, { email: caller.email });
   return invite.portal_id;
+}
+
+async function respondClientInvite(caller, inviteId, answer) {
+  const rows = await restRows(`cuotly_client_invitations?id=eq.${encodeURIComponent(inviteId)}&select=*,portal:cuotly_client_portals!inner(id,workspace_id,status)`);
+  const invite = rows[0];
+  if (!invite || cleanEmail(invite.email) !== cleanEmail(caller.email)) throw new Error('No encontramos esta invitacion para tu cuenta.');
+  if (new Date(invite.created_at).getTime() + 30 * 86400000 <= Date.now()) throw new Error('Esta invitacion ha caducado.');
+  if (invite.status !== 'pending') throw new Error('Esta invitacion ya fue respondida.');
+  const status = answer === 'reject' ? 'rejected' : 'accepted';
+  if (status === 'accepted') await acceptInvite(caller, inviteId);
+  else await restRows(`cuotly_client_invitations?id=eq.${encodeURIComponent(inviteId)}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ status, responded_at: new Date().toISOString() }) });
+  return { portalId: status === 'accepted' ? invite.portal_id : '', status };
 }
 
 export default async function handler(req, res) {
@@ -440,6 +453,11 @@ export default async function handler(req, res) {
       if (req.method !== 'POST') return res.status(405).json({ error: 'Metodo no permitido.' });
       const portalId = await acceptInvite(caller, String(body.inviteId || ''));
       return res.status(200).json({ ok: true, portalId, portals: await listClientPortals(caller) });
+    }
+    if (action === 'respond-client-invite') {
+      if (req.method !== 'POST') return res.status(405).json({ error: 'Metodo no permitido.' });
+      const result = await respondClientInvite(caller, String(body.inviteId || ''), body.answer === 'reject' ? 'reject' : 'accept');
+      return res.status(200).json({ ok: true, ...result, portals: await listClientPortals(caller) });
     }
     if (action === 'client-context') {
       const portals = await listClientPortals(caller);
@@ -470,6 +488,27 @@ export default async function handler(req, res) {
       if (!restaurant) throw new Error('No encontramos el restaurante.');
       const rows = await restRows('cuotly_client_portals?on_conflict=workspace_id,restaurant_id', { method: 'POST', headers: { 'content-type': 'application/json', prefer: 'resolution=merge-duplicates,return=representation' }, body: JSON.stringify({ workspace_id: workspaceId, restaurant_id: restaurantId, public_url: cleanText(restaurant.publicUrl || extractPublicUrl(restaurant), 1200), created_by: caller.id, status: 'active' }) });
       return res.status(200).json({ ok: true, portal: rows[0] });
+    }
+
+    if (action === 'delete-portal') {
+      if (req.method !== 'POST') return res.status(405).json({ error: 'Metodo no permitido.' });
+      const portalId = String(body.portalId || '');
+      if (!portalId) throw new Error('Falta el panel que quieres eliminar.');
+      const portal = await portalById(portalId);
+      if (!portal) throw new Error('No encontramos el panel del restaurante.');
+      const maintenance = await ensureMaintenanceAccess(caller, portal, 'delete-portal');
+      if (maintenance.role !== 'owner') throw new Error('Solo el propietario del mantenimiento puede eliminar el panel.');
+      const removedAt = new Date().toISOString();
+      const members = await restRows(`cuotly_client_members?portal_id=eq.${encodeURIComponent(portal.id)}&active=is.true&select=user_id,email,name,role`);
+      const restaurant = restaurantInPortal(portal);
+      for (const member of members) {
+        if (!member.user_id) continue;
+        await restRows('cuotly_access_history', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ user_id: member.user_id, email: member.email || '', display_name: member.name || member.email || 'Cuenta', kind: 'restaurant', target_id: portal.id, target_name: restaurant?.name || 'Restaurante', role: member.role || 'viewer', event: 'deleted', occurred_at: removedAt }) }).catch(() => {});
+      }
+      await restRows(`cuotly_client_members?portal_id=eq.${encodeURIComponent(portal.id)}&active=is.true`, { method: 'PATCH', headers: { 'content-type': 'application/json', prefer: 'return=minimal' }, body: JSON.stringify({ active: false, removed_at: removedAt }) });
+      await restRows(`cuotly_client_invitations?portal_id=eq.${encodeURIComponent(portal.id)}&status=eq.pending`, { method: 'PATCH', headers: { 'content-type': 'application/json', prefer: 'return=minimal' }, body: JSON.stringify({ status: 'cancelled', responded_at: removedAt }) }).catch(() => {});
+      await restRows(`cuotly_client_portals?id=eq.${encodeURIComponent(portal.id)}`, { method: 'PATCH', headers: { 'content-type': 'application/json', prefer: 'return=minimal' }, body: JSON.stringify({ status: 'deleted', updated_at: removedAt }) });
+      return res.status(200).json({ ok: true, deletedAt: removedAt });
     }
 
     const portal = await portalById(String(body.portalId || req.query?.portalId || ''));
@@ -580,7 +619,9 @@ export default async function handler(req, res) {
       return res.status(200).json({ ok: true, invitation: await inviteClient(caller, portal, body, req) });
     }
     if (action === 'update-client-member') {
-      if (req.method !== 'POST' || client?.role !== 'owner') throw new Error('Solo el propietario del restaurante puede gestionar su equipo.');
+      if (req.method !== 'POST') throw new Error('Metodo no permitido.');
+      const manager = client?.role === 'owner' ? null : await ensureMaintenanceAccess(caller, portal, 'update-client-member');
+      if (client?.role !== 'owner' && manager?.role !== 'owner') throw new Error('Solo el propietario del restaurante o del mantenimiento puede gestionar su equipo.');
       const memberId = String(body.memberId || '');
       const role = CLIENT_ROLES.includes(body.role) ? body.role : '';
       const active = body.active !== false;
